@@ -7,7 +7,7 @@ import Database from "better-sqlite3";
 
 const ROOT = join(import.meta.dirname, "..");
 const STATIC_DIR = join(ROOT, "dist", "client");
-const PORT = parseInt(process.env.PORT || "3001", 10);
+const PORT = parseInt(process.env.PORT || "5173", 10);
 const PROD = process.env.NODE_ENV === "production";
 
 // ── SQLite ────────────────────────────────────────────────────────

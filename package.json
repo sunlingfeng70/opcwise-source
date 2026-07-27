@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --configLoader runner",
+    "dev:all": "node scripts/dev.mjs",
     "dev:server": "node server/index.js",
     "start": "NODE_ENV=production node server/index.js",
     "build": "vite build --configLoader runner && node scripts/prepare-sites-build.mjs",
