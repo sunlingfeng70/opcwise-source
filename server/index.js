@@ -1,0 +1,362 @@
+import { createServer } from "node:http";
+import { readFileSync, existsSync, statSync, mkdirSync, writeFileSync } from "node:fs";
+import { join, extname } from "node:path";
+import crypto from "node:crypto";
+import { fileURLToPath } from "node:url";
+import Database from "better-sqlite3";
+
+const ROOT = join(import.meta.dirname, "..");
+const STATIC_DIR = join(ROOT, "dist", "client");
+const PORT = parseInt(process.env.PORT || "3001", 10);
+const PROD = process.env.NODE_ENV === "production";
+
+// ── SQLite ────────────────────────────────────────────────────────
+const db = new Database(join(ROOT, "data.db"));
+db.pragma("journal_mode = WAL");
+db.pragma("foreign_keys = ON");
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS aigc_submissions (
+    id             TEXT PRIMARY KEY,
+    phone          TEXT NOT NULL,
+    name           TEXT NOT NULL,
+    city           TEXT NOT NULL,
+    wechat         TEXT NOT NULL,
+    identity       TEXT NOT NULL,
+    paths          TEXT NOT NULL,
+    stage          TEXT NOT NULL,
+    directions     TEXT NOT NULL,
+    intro          TEXT NOT NULL,
+    material_links TEXT,
+    file_name      TEXT,
+    created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS enterprise_submissions (
+    id             TEXT PRIMARY KEY,
+    phone          TEXT NOT NULL,
+    organization   TEXT NOT NULL,
+    industry       TEXT NOT NULL,
+    city           TEXT NOT NULL,
+    contact        TEXT NOT NULL,
+    wechat         TEXT,
+    needs          TEXT NOT NULL,
+    description    TEXT NOT NULL,
+    cooperation    TEXT NOT NULL,
+    material_link  TEXT,
+    file_name      TEXT,
+    created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_aigc_phone ON aigc_submissions(phone);
+  CREATE INDEX IF NOT EXISTS idx_enterprise_phone ON enterprise_submissions(phone);
+`);
+
+// ── Helpers ───────────────────────────────────────────────────────
+const MIME = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript",
+  ".css": "text/css",
+  ".json": "application/json",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".webp": "image/webp",
+  ".svg": "image/svg+xml",
+  ".ico": "image/x-icon",
+};
+
+// ── File upload ────────────────────────────────────────────────────
+const UPLOAD_DIR = join(ROOT, "uploads");
+if (!existsSync(UPLOAD_DIR)) mkdirSync(UPLOAD_DIR, { recursive: true });
+
+const ALLOWED_UPLOAD_EXT = [".jpg", ".jpeg", ".png", ".webp", ".pdf"];
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB
+
+function safeFilename(original) {
+  const ext = extname(original).toLowerCase();
+  const base = original.slice(0, -ext.length).replace(/[^a-zA-Z0-9\u4e00-\u9fff_-]/g, "_");
+  return `${Date.now()}-${base}${ext}`;
+}
+
+function generateId(type) {
+  const date = new Date();
+  const y = String(date.getFullYear()).slice(-2);
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  const random = Math.random().toString(36).slice(2, 7).toUpperCase();
+  const prefix = type === "enterprise" ? "E" : "A";
+  return `OPC-${prefix}-${y}${m}${d}-${random}`;
+}
+
+function json(res, status, data) {
+  res.writeHead(status, { "Content-Type": "application/json" });
+  res.end(JSON.stringify(data));
+}
+
+function parseBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    req.on("data", (chunk) => (body += chunk));
+    req.on("end", () => {
+      try {
+        resolve(JSON.parse(body));
+      } catch {
+        reject(new Error("Invalid JSON"));
+      }
+    });
+  });
+}
+
+// ── Validation ────────────────────────────────────────────────────
+function validate(body) {
+  const errors = [];
+  if (!body.type || !["aigc", "enterprise"].includes(body.type)) {
+    errors.push("type must be 'aigc' or 'enterprise'");
+  }
+  if (!body.phone || !/^1[3-9]\d{9}$/.test(body.phone)) {
+    errors.push("phone must be a valid Chinese mobile number");
+  }
+  const { type } = body;
+  if (type === "aigc") {
+    if (!body.name) errors.push("name is required");
+    if (!body.city) errors.push("city is required");
+    if (!body.wechat) errors.push("wechat is required");
+    if (!body.identity) errors.push("identity is required");
+    if (!body.paths?.length) errors.push("paths is required");
+    if (!body.stage) errors.push("stage is required");
+    if (!body.directions?.length) errors.push("directions is required");
+    if (!body.intro) errors.push("intro is required");
+  } else {
+    if (!body.organization) errors.push("organization is required");
+    if (!body.industry) errors.push("industry is required");
+    if (!body.city) errors.push("city is required");
+    if (!body.contact) errors.push("contact is required");
+    if (!body.needs?.length) errors.push("needs is required");
+    if (!body.description) errors.push("description is required");
+    if (!body.cooperation) errors.push("cooperation is required");
+  }
+  return errors;
+}
+
+// ── API handlers ──────────────────────────────────────────────────
+async function handleSubmit(req, res) {
+  let body;
+  try {
+    body = await parseBody(req);
+  } catch {
+    return json(res, 400, { error: "Invalid JSON" });
+  }
+
+  const errors = validate(body);
+  if (errors.length) {
+    return json(res, 400, { error: "Validation failed", details: errors });
+  }
+
+  const { type, phone } = body;
+  const id = generateId(type);
+  const table = type === "enterprise" ? "enterprise_submissions" : "aigc_submissions";
+
+  const existing = db.prepare(`SELECT id FROM ${table} WHERE phone = ?`).get(phone);
+
+  if (type === "aigc") {
+    db.prepare(
+      `INSERT INTO aigc_submissions (id, phone, name, city, wechat, identity, paths, stage, directions, intro, material_links, file_name)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      id, phone, body.name, body.city, body.wechat, body.identity,
+      JSON.stringify(body.paths), body.stage, JSON.stringify(body.directions),
+      body.intro, body.materialLinks || null, body.fileName || null,
+    );
+  } else {
+    db.prepare(
+      `INSERT INTO enterprise_submissions (id, phone, organization, industry, city, contact, wechat, needs, description, cooperation, material_link, file_name)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      id, phone, body.organization, body.industry, body.city, body.contact,
+      body.wechat || null, JSON.stringify(body.needs), body.description,
+      body.cooperation, body.materialLink || null, body.fileName || null,
+    );
+  }
+
+  json(res, 200, { id, duplicate: !!existing });
+}
+
+// ── File upload handler ────────────────────────────────────────────
+async function handleUpload(req, res) {
+  let body;
+  try { body = await parseBody(req); }
+  catch { return json(res, 400, { error: "Invalid JSON" }); }
+
+  const { name, data } = body;
+  if (!name || !data) return json(res, 400, { error: "name and data (base64) required" });
+
+  const ext = extname(name).toLowerCase();
+  if (!ALLOWED_UPLOAD_EXT.includes(ext)) {
+    return json(res, 400, { error: `File type ${ext} not allowed. Accepted: ${ALLOWED_UPLOAD_EXT.join(", ")}` });
+  }
+
+  const buffer = Buffer.from(data, "base64");
+  if (buffer.length > MAX_UPLOAD_BYTES) {
+    return json(res, 400, { error: "File too large. Max 10 MB" });
+  }
+
+  const safeName = safeFilename(name);
+  mkdirSync(UPLOAD_DIR, { recursive: true });
+  writeFileSync(join(UPLOAD_DIR, safeName), buffer);
+  json(res, 200, { path: `/api/uploads/${safeName}`, name: safeName });
+}
+
+function handleServeUpload(req, res) {
+  const pathname = new URL(req.url, "http://localhost").pathname;
+  const fileName = pathname.replace("/api/uploads/", "");
+  if (!fileName || fileName.includes("..") || fileName.includes("/")) {
+    return json(res, 403, { error: "Forbidden" });
+  }
+  const filePath = join(UPLOAD_DIR, fileName);
+  if (!existsSync(filePath) || !statSync(filePath).isFile()) {
+    return json(res, 404, { error: "Not found" });
+  }
+  const ext = extname(filePath).toLowerCase();
+  const contentType = MIME[ext] || "application/octet-stream";
+  const content = readFileSync(filePath);
+  res.writeHead(200, { "Content-Type": contentType });
+  res.end(content);
+}
+
+// ── Admin ──────────────────────────────────────────────────────────
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
+const adminTokens = new Map();
+const TOKEN_TTL = 24 * 60 * 60 * 1000;
+
+function generateToken() {
+  return crypto.randomUUID();
+}
+
+function requireAdmin(res, req) {
+  const auth = req.headers.authorization || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  const expiry = adminTokens.get(token);
+  if (!expiry || Date.now() > expiry) {
+    adminTokens.delete(token);
+    return false;
+  }
+  return true;
+}
+
+async function handleAdminLogin(req, res) {
+  let body;
+  try { body = await parseBody(req); }
+  catch { return json(res, 400, { error: "Invalid JSON" }); }
+
+  if (body.password !== ADMIN_PASSWORD) {
+    return json(res, 401, { error: "密码错误" });
+  }
+
+  const token = generateToken();
+  adminTokens.set(token, Date.now() + TOKEN_TTL);
+  json(res, 200, { token });
+}
+
+function handleAdminSubmissions(req, res) {
+  const url = new URL(req.url, "http://localhost");
+  const type = url.searchParams.get("type") || "aigc";
+  const phone = url.searchParams.get("phone") || "";
+
+  const table = type === "enterprise" ? "enterprise_submissions" : "aigc_submissions";
+
+  let query = `SELECT * FROM ${table}`;
+  const params = [];
+
+  if (phone) {
+    query += ` WHERE phone LIKE ?`;
+    params.push(`%${phone}%`);
+  }
+
+  query += ` ORDER BY created_at DESC LIMIT 200`;
+
+  const rows = db.prepare(query).all(...params);
+
+  const parsed = rows.map((row) => ({
+    ...row,
+    paths: row.paths ? tryParseJSON(row.paths) : row.paths,
+    directions: row.directions ? tryParseJSON(row.directions) : row.directions,
+    needs: row.needs ? tryParseJSON(row.needs) : row.needs,
+  }));
+
+  json(res, 200, { data: parsed, total: parsed.length });
+}
+
+function tryParseJSON(str) {
+  try { return JSON.parse(str); }
+  catch { return str; }
+}
+
+// ── Static file serving (production only) ────────────────────────
+function serveStatic(req, res) {
+  let pathname = new URL(req.url, "http://localhost").pathname;
+  if (pathname === "/") pathname = "/index.html";
+
+  const filePath = join(STATIC_DIR, pathname);
+
+  if (!filePath.startsWith(STATIC_DIR)) {
+    res.writeHead(403);
+    return res.end("Forbidden");
+  }
+
+  if (!existsSync(filePath) || !statSync(filePath).isFile()) {
+    // SPA fallback: serve index.html for unknown routes
+    const index = join(STATIC_DIR, "index.html");
+    if (!existsSync(index)) {
+      res.writeHead(404);
+      return res.end("Not found");
+    }
+    const content = readFileSync(index);
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    return res.end(content);
+  }
+
+  const ext = extname(filePath).toLowerCase();
+  const contentType = MIME[ext] || "application/octet-stream";
+  const content = readFileSync(filePath);
+  res.writeHead(200, { "Content-Type": contentType });
+  res.end(content);
+}
+
+// ── Server ────────────────────────────────────────────────────────
+const server = createServer(async (req, res) => {
+  const { method, url } = req;
+
+  if (url === "/api/submit") {
+    return handleSubmit(req, res);
+  }
+
+  if (url === "/api/upload" && method === "POST") {
+    return handleUpload(req, res);
+  }
+
+  if (url.startsWith("/api/uploads/") && method === "GET") {
+    return handleServeUpload(req, res);
+  }
+
+  if (url === "/api/admin/login" && method === "POST") {
+    return handleAdminLogin(req, res);
+  }
+
+  if (url.startsWith("/api/admin/submissions") && method === "GET") {
+    if (!requireAdmin(res, req)) return json(res, 401, { error: "未登录" });
+    return handleAdminSubmissions(req, res);
+  }
+
+  if (PROD) {
+    return serveStatic(req, res);
+  }
+
+  // In dev mode, API-only — frontend is served by Vite
+  res.writeHead(404);
+  res.end("Not found");
+});
+
+server.listen(PORT, () => {
+  console.log(`API server running on http://localhost:${PORT}`);
+  if (PROD) console.log(`Serving static assets from ${STATIC_DIR}`);
+});
