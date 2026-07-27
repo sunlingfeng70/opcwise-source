@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { AdminPage } from "./AdminPage";
 import {
   ArrowRight,
   Briefcase,
@@ -649,10 +650,6 @@ function FormModal({ type, onClose }) {
   function update(key, value) {
     setValues((current) => ({ ...current, [key]: value }));
     setErrors((current) => ({ ...current, [key]: "" }));
-    if (key === "phone") {
-      const submissions = JSON.parse(localStorage.getItem("opcwise-demo-submissions") || "[]");
-      setDuplicate(submissions.some((item) => item.phone === value));
-    }
   }
 
   function toggle(key, value) {
@@ -663,11 +660,10 @@ function FormModal({ type, onClose }) {
   function handleFile(event) {
     const next = event.target.files?.[0] || null;
     if (!next) return setFile(null);
-    const allowed = [".pdf", ".ppt", ".pptx", ".doc", ".docx"];
+    const allowed = [".jpg", ".jpeg", ".png", ".webp", ".pdf"];
     const extension = next.name.slice(next.name.lastIndexOf(".")).toLowerCase();
-    const max = isEnterprise ? 20 : 30;
-    if (!allowed.includes(extension) || next.size > max * 1024 * 1024) {
-      setErrors((current) => ({ ...current, file: `仅支持 PDF、PPT/PPTX、DOC/DOCX，文件不超过 ${max}MB。` }));
+    if (!allowed.includes(extension) || next.size > 10 * 1024 * 1024) {
+      setErrors((current) => ({ ...current, file: `仅支持 JPG/PNG/WebP 图片或 PDF 文件，不超过 10MB。` }));
       event.target.value = "";
       return setFile(null);
     }
@@ -691,17 +687,47 @@ function FormModal({ type, onClose }) {
     return Object.keys(next).length === 0;
   }
 
-  function submit(event) {
+  async function submit(event) {
     event.preventDefault();
     if (!validate()) return;
-    const date = new Date();
-    const stamp = `${String(date.getFullYear()).slice(-2)}${String(date.getMonth() + 1).padStart(2, "0")}${String(date.getDate()).padStart(2, "0")}`;
-    const random = Math.random().toString(36).slice(2, 7).toUpperCase();
-    const id = `OPC-${isEnterprise ? "E" : "A"}-${stamp}-${random}`;
-    const submissions = JSON.parse(localStorage.getItem("opcwise-demo-submissions") || "[]");
-    submissions.push({ type, phone: values.phone, id, submittedAt: date.toISOString(), fileName: file?.name || "", ...values });
-    localStorage.setItem("opcwise-demo-submissions", JSON.stringify(submissions));
-    setSuccess(id);
+    try {
+      let fileName = "";
+      if (file) {
+        const reader = new FileReader();
+        const data = await new Promise((resolve) => {
+          reader.onload = () => resolve(reader.result.split(",")[1]);
+          reader.readAsDataURL(file);
+        });
+        const uploadRes = await fetch("/api/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: file.name, data }),
+        });
+        if (!uploadRes.ok) {
+          let msg = "文件上传失败";
+          try { const err = await uploadRes.json(); if (err.error) msg = err.error; } catch {}
+          throw new Error(msg);
+        }
+        const uploadData = await uploadRes.json();
+        fileName = uploadData.path;
+      }
+      const body = { type, phone: values.phone, fileName, ...values };
+      const res = await fetch("/api/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        let msg = "提交失败，请稍后重试";
+        try { const err = await res.json(); if (err.error) msg = err.error; } catch {}
+        throw new Error(msg);
+      }
+      const data = await res.json();
+      setDuplicate(data.duplicate);
+      setSuccess(data.id);
+    } catch (err) {
+      setErrors((current) => ({ ...current, _form: err.message }));
+    }
   }
 
   if (success) {
@@ -746,7 +772,7 @@ function FormModal({ type, onClose }) {
               <CheckboxGroup label="希望解决哪类问题" required options={enterpriseNeeds} values={values.needs} error={errors.needs} onToggle={(value) => toggle("needs", value)} />
               <TextareaField label="简单描述需求" required value={values.description} error={errors.description} maxLength={100} onChange={(value) => update("description", value)} placeholder="请说明目前遇到的问题、希望改善的业务环节或期待的结果。" />
               <RadioGroup label="当前合作意向" required options={cooperationOptions} value={values.cooperation} error={errors.cooperation} onChange={(value) => update("cooperation", value)} />
-              <MaterialField value={values.materialLink} onChange={(value) => update("materialLink", value)} file={file} error={errors.file} onFile={handleFile} max="20MB" required={false} />
+              <MaterialField value={values.materialLink} onChange={(value) => update("materialLink", value)} file={file} error={errors.file} onFile={handleFile} required={false} />
             </>
           ) : (
             <>
@@ -762,11 +788,12 @@ function FormModal({ type, onClose }) {
               <RadioGroup label="目前达到的阶段" required options={stageOptions} value={values.stage} error={errors.stage} onChange={(value) => update("stage", value)} />
               <CheckboxGroup label="主要 AIGC 方向" required options={creatorDirections} values={values.directions} error={errors.directions} onToggle={(value) => toggle("directions", value)} />
               <TextareaField label="一句话介绍" required value={values.intro} error={errors.intro} maxLength={300} onChange={(value) => update("intro", value)} placeholder="说明你是谁、正在做什么、已有成果以及下一步希望获得什么资源。" />
-              <MaterialField value={values.materialLinks} onChange={(value) => update("materialLinks", value)} file={file} error={errors.file || errors.materials} onFile={handleFile} max="30MB" required />
+              <MaterialField value={values.materialLinks} onChange={(value) => update("materialLinks", value)} file={file} error={errors.file || errors.materials} onFile={handleFile} required />
             </>
           )}
           <div className="form-footer">
             <p>提交即表示您同意组委会为报名审核与项目对接使用上述信息。联系方式及未授权材料不会公开展示。</p>
+            {errors._form && <div className="error-banner">{errors._form}</div>}
             <Button className="submit-button">{isEnterprise ? "提交企业需求" : "提交报名"} <ArrowRight /></Button>
           </div>
         </form>
@@ -850,8 +877,8 @@ function MaterialField({ value, onChange, file, error, onFile, max, required }) 
         <label className="upload-box">
           <CloudArrowUp />
           <strong>{file ? file.name : "上传 1 份材料"}</strong>
-          <span>PDF / PPT / PPTX / DOC / DOCX · 不超过 {max}</span>
-          <input type="file" accept=".pdf,.ppt,.pptx,.doc,.docx" onChange={onFile} />
+          <span>JPG / PNG / WebP / PDF · 不超过 10MB</span>
+          <input type="file" accept=".jpg,.jpeg,.png,.webp,.pdf" onChange={onFile} />
         </label>
         <label className="link-box">
           <span>或填写作品集、网盘、官网、账号或案例链接</span>
@@ -897,7 +924,9 @@ export function App() {
   }, [route]);
 
   let page;
-  if (route === "about") page = <AboutPage openForm={openForm} />;
+  const isAdmin = route === "admin";
+  if (isAdmin) page = <AdminPage />;
+  else if (route === "about") page = <AboutPage openForm={openForm} />;
   else if (route === "schedule") page = <SchedulePage openForm={openForm} />;
   else if (route === "enterprise") page = <EnterprisePage openForm={openForm} />;
   else if (route === "aigc") page = <AigcPage openForm={openForm} />;
@@ -906,9 +935,9 @@ export function App() {
 
   return (
     <div className="app-shell">
-      <Header route={route} onRegister={() => setChooser(true)} />
+      {!isAdmin && <Header route={route} onRegister={() => setChooser(true)} />}
       {page}
-      <Footer onRegister={() => setChooser(true)} />
+      {!isAdmin && <Footer onRegister={() => setChooser(true)} />}
       {chooser && <RegistrationChooser onClose={() => setChooser(false)} onChoose={openForm} />}
       {formType && <FormModal type={formType} onClose={() => setFormType(null)} />}
     </div>
