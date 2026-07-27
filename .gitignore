@@ -3,3 +3,4 @@ dist/
 .npm-cache/
 implementation-*.png
 design-comparison-*.png
+uploads/
