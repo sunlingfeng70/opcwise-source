@@ -1,0 +1,246 @@
+import { useState, useEffect, useCallback } from "react";
+
+const TOKEN_KEY = "opcwise-admin-token";
+
+function go(route) {
+  window.location.hash = `#/${route}`;
+  window.scrollTo({ top: 0 });
+}
+
+function fetchWithAuth(url, token) {
+  return fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+function LoginForm({ onLogin }) {
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function submit(e) {
+    e.preventDefault();
+    if (!password) return;
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/admin/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "登录失败");
+      onLogin(data.token);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="admin-login">
+      <div className="admin-login-card">
+        <h1>OPCWISE 管理后台</h1>
+        <form onSubmit={submit}>
+          <input
+            type="password"
+            placeholder="管理员密码"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoFocus
+          />
+          {error && <div className="admin-error">{error}</div>}
+          <button type="submit" disabled={loading}>
+            {loading ? "登录中..." : "登录"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function FileCell({ value }) {
+  if (!value) return <span className="admin-null">-</span>;
+  const isImage = /\.(jpg|jpeg|png|webp)$/i.test(value);
+  if (isImage) {
+    return <img className="admin-thumb" src={value} alt="上传文件" />;
+  }
+  return <a className="admin-file-link" href={value} target="_blank" rel="noopener noreferrer">PDF 文件 ↗</a>;
+}
+
+const AIGC_COLUMNS = [
+  { key: "id", label: "编号" },
+  { key: "created_at", label: "提交时间" },
+  { key: "name", label: "姓名" },
+  { key: "phone", label: "手机号" },
+  { key: "city", label: "城市" },
+  { key: "wechat", label: "微信" },
+  { key: "identity", label: "身份" },
+  { key: "paths", label: "发展路径", render: (v) => v?.join(", ") },
+  { key: "stage", label: "阶段" },
+  { key: "directions", label: "AIGC方向", render: (v) => v?.join(", ") },
+  { key: "intro", label: "介绍" },
+  { key: "file_name", label: "上传文件", render: (v) => <FileCell value={v} /> },
+  { key: "material_links", label: "材料链接" },
+];
+
+const ENTERPRISE_COLUMNS = [
+  { key: "id", label: "编号" },
+  { key: "created_at", label: "提交时间" },
+  { key: "organization", label: "企业名称" },
+  { key: "phone", label: "手机号" },
+  { key: "industry", label: "行业" },
+  { key: "city", label: "城市" },
+  { key: "contact", label: "联系人" },
+  { key: "wechat", label: "微信" },
+  { key: "needs", label: "需求方向", render: (v) => v?.join(", ") },
+  { key: "description", label: "需求描述" },
+  { key: "cooperation", label: "合作意向" },
+  { key: "file_name", label: "上传文件", render: (v) => <FileCell value={v} /> },
+  { key: "material_link", label: "材料链接" },
+];
+
+function DataTable({ columns, rows, search, onSearchChange, onRefresh }) {
+  return (
+    <div className="admin-table-wrap">
+      <div className="admin-table-toolbar">
+        <input
+          className="admin-search"
+          type="text"
+          placeholder="搜索手机号..."
+          value={search}
+          onChange={(e) => onSearchChange(e.target.value)}
+        />
+        <span className="admin-count">{rows.length} 条记录</span>
+        <button className="admin-refresh" onClick={onRefresh} title="刷新数据">
+          ↻
+        </button>
+      </div>
+      <div className="admin-table-scroll">
+        <table className="admin-table">
+          <thead>
+            <tr>
+              {columns.map((col) => (
+                <th key={col.key}>{col.label}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={columns.length} className="admin-empty">
+                  暂无数据
+                </td>
+              </tr>
+            ) : (
+              rows.map((row) => (
+                <tr key={row.id}>
+                  {columns.map((col) => (
+                    <td key={col.key}>
+                      {col.render ? col.render(row[col.key]) : row[col.key] ?? "-"}
+                    </td>
+                  ))}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+export function AdminPage() {
+  const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY));
+  const [tab, setTab] = useState("aigc");
+  const [rows, setRows] = useState([]);
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const columns = tab === "aigc" ? AIGC_COLUMNS : ENTERPRISE_COLUMNS;
+
+  const fetchData = useCallback(async () => {
+    if (!token) return;
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ type: tab });
+      if (search) params.set("phone", search);
+      const res = await fetchWithAuth(`/api/admin/submissions?${params}`, token);
+      if (res.status === 401) {
+        localStorage.removeItem(TOKEN_KEY);
+        setToken(null);
+        return;
+      }
+      const data = await res.json();
+      setRows(data.data || []);
+    } catch {
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [token, tab, search]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  function handleLogin(tokenValue) {
+    localStorage.setItem(TOKEN_KEY, tokenValue);
+    setToken(tokenValue);
+  }
+
+  function handleLogout() {
+    localStorage.removeItem(TOKEN_KEY);
+    setToken(null);
+    setRows([]);
+  }
+
+  if (!token) {
+    return <LoginForm onLogin={handleLogin} />;
+  }
+
+  return (
+    <div className="admin-page">
+      <header className="admin-header">
+        <div className="admin-header-left">
+          <button className="admin-back" onClick={() => go("home")}>
+            ← 返回首页
+          </button>
+          <h1>管理后台</h1>
+        </div>
+        <button className="admin-logout" onClick={handleLogout}>
+          退出登录
+        </button>
+      </header>
+
+      <nav className="admin-tabs">
+        <button
+          className={tab === "aigc" ? "admin-tab active" : "admin-tab"}
+          onClick={() => setTab("aigc")}
+        >
+          AIGC 报名表
+        </button>
+        <button
+          className={tab === "enterprise" ? "admin-tab active" : "admin-tab"}
+          onClick={() => setTab("enterprise")}
+        >
+          企业需求表
+        </button>
+      </nav>
+
+      {loading ? (
+        <div className="admin-loading">加载中...</div>
+      ) : (
+        <DataTable
+          columns={columns}
+          rows={rows}
+          search={search}
+          onSearchChange={setSearch}
+          onRefresh={fetchData}
+        />
+      )}
+    </div>
+  );
+}

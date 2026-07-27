@@ -1564,6 +1564,16 @@ p {
   font-size: 12px;
 }
 
+.error-banner {
+  margin-top: 18px;
+  padding: 11px 14px;
+  border: 1px solid rgba(255, 76, 76, 0.38);
+  border-radius: 9px;
+  background: rgba(255, 76, 76, 0.12);
+  color: #ff6b6b;
+  font-size: 13px;
+}
+
 .has-error input,
 .has-error select,
 .has-error textarea,
@@ -2123,4 +2133,265 @@ p {
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+.admin-page {
+  min-height: 100vh;
+  background: #0d0d0d;
+  color: #e0e0e0;
+  font-size: 14px;
+}
+
+.admin-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  border-bottom: 1px solid #222;
+  background: #111;
+}
+
+.admin-header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.admin-header h1 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.admin-back {
+  background: none;
+  border: 1px solid #333;
+  color: #aaa;
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.admin-back:hover {
+  color: #fff;
+  border-color: #555;
+}
+
+.admin-logout {
+  background: none;
+  border: 1px solid #4a1a1a;
+  color: #ff6b6b;
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.admin-logout:hover {
+  background: #1a0a0a;
+}
+
+.admin-login {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0d0d0d;
+}
+
+.admin-login-card {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 12px;
+  padding: 40px;
+  width: 360px;
+}
+
+.admin-login-card h1 {
+  font-size: 20px;
+  margin: 0 0 24px;
+  text-align: center;
+  color: #fff;
+}
+
+.admin-login-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.admin-login-card input {
+  padding: 12px 14px;
+  border: 1px solid #333;
+  border-radius: 8px;
+  background: #111;
+  color: #fff;
+  font-size: 15px;
+  outline: none;
+}
+
+.admin-login-card input:focus {
+  border-color: #555;
+}
+
+.admin-login-card button {
+  padding: 12px;
+  border: none;
+  border-radius: 8px;
+  background: #fff;
+  color: #000;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.admin-login-card button:disabled {
+  opacity: 0.5;
+}
+
+.admin-error {
+  color: #ff6b6b;
+  font-size: 13px;
+  text-align: center;
+}
+
+.admin-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid #222;
+  padding: 0 24px;
+  background: #111;
+}
+
+.admin-tab {
+  padding: 12px 20px;
+  border: none;
+  background: none;
+  color: #888;
+  font-size: 14px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.admin-tab.active {
+  color: #fff;
+  border-bottom-color: #fff;
+}
+
+.admin-table-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 24px;
+}
+
+.admin-search {
+  padding: 8px 12px;
+  border: 1px solid #333;
+  border-radius: 6px;
+  background: #111;
+  color: #fff;
+  font-size: 13px;
+  width: 200px;
+  outline: none;
+}
+
+.admin-search:focus {
+  border-color: #555;
+}
+
+.admin-count {
+  color: #666;
+  font-size: 13px;
+}
+
+.admin-refresh {
+  margin-left: auto;
+  padding: 6px 14px;
+  border: 1px solid #333;
+  border-radius: 6px;
+  background: #111;
+  color: #aaa;
+  font-size: 16px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.admin-refresh:hover {
+  color: #fff;
+  border-color: #555;
+  background: #1a1a1a;
+}
+
+.admin-table-scroll {
+  overflow-x: auto;
+  padding: 0 24px 24px;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.admin-table th {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid #2a2a2a;
+  color: #888;
+  font-weight: 500;
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  background: #0d0d0d;
+}
+
+.admin-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #1a1a1a;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-table tbody tr:hover {
+  background: #141414;
+}
+
+.admin-null {
+  color: #555;
+}
+
+.admin-thumb {
+  width: 60px;
+  height: 60px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid #2a2a2a;
+  display: block;
+}
+
+.admin-file-link {
+  color: #4a9eff;
+  text-decoration: none;
+  font-size: 13px;
+}
+
+.admin-file-link:hover {
+  text-decoration: underline;
+}
+
+.admin-empty {
+  text-align: center;
+  color: #555;
+  padding: 40px 12px !important;
+}
+
+.admin-loading {
+  text-align: center;
+  padding: 40px;
+  color: #666;
 }
