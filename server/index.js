@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { readFileSync, existsSync, statSync, mkdirSync, writeFileSync } from "node:fs";
+import { readFileSync, existsSync, statSync, mkdirSync, writeFileSync, appendFileSync } from "node:fs";
 import { join, extname } from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
@@ -9,6 +9,43 @@ const ROOT = join(import.meta.dirname, "..");
 const STATIC_DIR = join(ROOT, "dist", "client");
 const PORT = parseInt(process.env.PORT || "5173", 10);
 const PROD = process.env.NODE_ENV === "production";
+// ── Logger ─────────────────────────────────────────────────────────
+const LOG_DIR = join(ROOT, "logs");
+if (!existsSync(LOG_DIR)) mkdirSync(LOG_DIR, { recursive: true });
+
+function logFilePath() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return join(LOG_DIR, y + "-" + m + "-" + day + ".log");
+}
+
+function maskPhone(phone) {
+  if (!phone || phone.length < 7) return phone;
+  return phone.slice(0, 3) + "****" + phone.slice(-4);
+}
+
+function log(level, event, msg, extra) {
+  const time = new Date().toISOString().replace("T", " ").replace("Z", "");
+  let line = "[" + time + "] [" + level + "] [" + event + "] " + msg;
+  if (extra) {
+    for (const k of Object.keys(extra)) {
+      line += " | " + k + "=" + extra[k];
+    }
+  }
+  line += "\n";
+  try {
+    appendFileSync(logFilePath(), line);
+  } catch (e) {
+    console.error("Log write failed:", e.message);
+  }
+}
+
+const logInfo = log.bind(null, "INFO");
+const logWarn = log.bind(null, "WARN");
+const logError = log.bind(null, "ERROR");
+
 
 // ── SQLite ────────────────────────────────────────────────────────
 const db = new Database(join(ROOT, "data.db"));
@@ -149,7 +186,8 @@ async function handleSubmit(req, res) {
 
   const errors = validate(body);
   if (errors.length) {
-    return json(res, 400, { error: "Validation failed", details: errors });
+    logWarn("submit", "Validation failed", { phone: body.phone ? maskPhone(body.phone) : "none", errors: errors.join(", ") });
+  return json(res, 400, { error: "Validation failed", details: errors });
   }
 
   const { type, phone } = body;
@@ -178,6 +216,7 @@ async function handleSubmit(req, res) {
     );
   }
 
+  logInfo("submit", (type === "enterprise" ? "Enterprise" : "AIGC") + " submission created", { id: id, phone: maskPhone(phone), duplicate: String(!!existing) });
   json(res, 200, { id, duplicate: !!existing });
 }
 
@@ -192,17 +231,20 @@ async function handleUpload(req, res) {
 
   const ext = extname(name).toLowerCase();
   if (!ALLOWED_UPLOAD_EXT.includes(ext)) {
-    return json(res, 400, { error: `File type ${ext} not allowed. Accepted: ${ALLOWED_UPLOAD_EXT.join(", ")}` });
+    logWarn("upload", "File type rejected", { name: name, ext: ext });
+  return json(res, 400, { error: `File type ${ext} not allowed. Accepted: ${ALLOWED_UPLOAD_EXT.join(", ")}` });
   }
 
   const buffer = Buffer.from(data, "base64");
   if (buffer.length > MAX_UPLOAD_BYTES) {
-    return json(res, 400, { error: "File too large. Max 10 MB" });
+    logWarn("upload", "File too large", { name: name, size: String(buffer.length) });
+  return json(res, 400, { error: "File too large. Max 10 MB" });
   }
 
   const safeName = safeFilename(name);
   mkdirSync(UPLOAD_DIR, { recursive: true });
   writeFileSync(join(UPLOAD_DIR, safeName), buffer);
+  logInfo("upload", "File uploaded", { name: safeName, size: String(buffer.length), type: ext });
   json(res, 200, { path: `/api/uploads/${safeName}`, name: safeName });
 }
 
@@ -249,11 +291,13 @@ async function handleAdminLogin(req, res) {
   catch { return json(res, 400, { error: "Invalid JSON" }); }
 
   if (body.password !== ADMIN_PASSWORD) {
-    return json(res, 401, { error: "密码错误" });
+    logWarn("login", "Admin login failed", { ip: req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown" });
+  return json(res, 401, { error: "密码错误" });
   }
 
   const token = generateToken();
   adminTokens.set(token, Date.now() + TOKEN_TTL);
+  logInfo("login", "Admin login success", { ip: req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown" });
   json(res, 200, { token });
 }
 
@@ -283,6 +327,7 @@ function handleAdminSubmissions(req, res) {
     needs: row.needs ? tryParseJSON(row.needs) : row.needs,
   }));
 
+  logInfo("query", "Admin queried submissions", { type: type, phone: phone ? maskPhone(phone) : "all", count: String(parsed.length) });
   json(res, 200, { data: parsed, total: parsed.length });
 }
 
@@ -357,6 +402,6 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`API server running on http://localhost:${PORT}`);
+  logInfo("server", "Server started", { port: String(PORT), mode: PROD ? "production" : "development" });
   if (PROD) console.log(`Serving static assets from ${STATIC_DIR}`);
 });
