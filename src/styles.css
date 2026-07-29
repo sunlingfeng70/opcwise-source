@@ -1618,6 +1618,99 @@ p {
   flex: 0 0 auto;
 }
 
+/* ── Upload form (short-film) ────────────────────────────────── */
+.form-section {
+  padding: 62px 0 80px;
+}
+
+.upload-form {
+  max-width: 640px;
+  display: grid;
+  gap: 22px;
+}
+
+.upload-field {
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.upload-field legend {
+  color: #dbe2f4;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 9px;
+}
+
+.upload-field b {
+  color: #ff8092;
+}
+
+.upload-field small {
+  display: block;
+  margin-top: 8px;
+  color: #ff667d;
+  font-size: 12px;
+}
+
+.upload-field .upload-box {
+  min-height: 140px;
+}
+
+.upload-terms {
+  margin: 0;
+  color: #8490aa;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.success-section {
+  padding: 80px 0;
+  display: grid;
+  place-items: center;
+}
+
+.success-card {
+  max-width: 480px;
+  text-align: center;
+  display: grid;
+  gap: 18px;
+  place-items: center;
+}
+
+.success-card svg {
+  width: 52px;
+  height: 52px;
+  color: #5cffa3;
+}
+
+.success-card h2 {
+  margin: 0;
+  font-size: 26px;
+}
+
+.success-card p {
+  margin: 0;
+}
+
+.success-card .muted {
+  font-size: 12px;
+  color: #6e7b99;
+}
+
+.qrcode-img {
+  width: 200px;
+  height: 200px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  object-fit: cover;
+}
+
+.upload-section-cta {
+  margin-top: 32px;
+  text-align: center;
+}
+
 .success-modal {
   max-width: 560px;
   text-align: center;

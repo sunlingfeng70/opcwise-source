@@ -168,6 +168,12 @@ function RegistrationChooser({ onClose, onChoose }) {
             <small>提交现有作品、项目与商业实践材料。</small>
             <span className="choice-action">进入报名表 <ArrowRight /></span>
           </button>
+          <button className="choice-card" onClick={() => { onClose(); go("short-film/upload"); }}>
+            <span className="icon-tile"><FilmSlate /></span>
+            <strong>一分钟短片创作大赛</strong>
+            <small>上传一分钟短片作品，展示创意与制作能力。</small>
+            <span className="choice-action">上传作品 <ArrowRight /></span>
+          </button>
         </div>
       </section>
     </div>
@@ -622,6 +628,7 @@ function ShortFilmPage() {
         title="一分钟短片创作大赛"
         description="用一分钟的影像，讲述你的创意。参赛作品版权及使用授权说明。"
         visual="one-minute.jpg"
+        primary={<Button onClick={() => go("short-film/upload")}><CloudArrowUp /> 上传作品 <ArrowRight weight="bold" /></Button>}
       />
       <section className="page-section prose-section">
         <SectionHeading kicker="COPYRIGHT & USAGE RIGHTS" title="参赛作品版权及使用授权" />
@@ -630,6 +637,145 @@ function ShortFilmPage() {
           <p>迈影公司有权通过互联网平台、社交媒体、视频网站、官方网站、媒体报道、线下活动、展览、发布会及其他公开渠道，对全部参赛作品进行发布、传播、展示、放映和宣传。</p>
           <p>为适应宣传、展示及不同平台的传播要求，迈影公司有权在不歪曲作品原意、不损害创作者合法权益的前提下，对参赛作品进行剪辑、节选、压缩、格式转换、添加字幕、增加片头片尾、制作宣传片段及其他必要编辑。</p>
         </div>
+        <div className="upload-section-cta">
+          <Button onClick={() => go("short-film/upload")}><CloudArrowUp /> 上传你的作品 <ArrowRight /></Button>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function ShortFilmUploadPage() {
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [wechat, setWechat] = useState("");
+  const [intro, setIntro] = useState("");
+  const [file, setFile] = useState(null);
+  const [errors, setErrors] = useState({});
+  const [success, setSuccess] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  function handleFile(event) {
+    const next = event.target.files?.[0] || null;
+    if (!next) return setFile(null);
+    const ext = next.name.slice(next.name.lastIndexOf(".")).toLowerCase();
+    if (![".jpg", ".jpeg", ".png", ".webp", ".pdf", ".mp4", ".mov", ".avi", ".zip"].includes(ext) || next.size > 50 * 1024 * 1024) {
+      setErrors((prev) => ({ ...prev, file: "支持 JPG/PNG/WebP/PDF/MP4/MOV/AVI/ZIP，不超过 50MB" }));
+      event.target.value = "";
+      return setFile(null);
+    }
+    setErrors((prev) => ({ ...prev, file: "" }));
+    setFile(next);
+  }
+
+  function validate() {
+    const next = {};
+    if (!name.trim()) next.name = "请填写姓名";
+    if (!/^1[3-9]\d{9}$/.test(phone)) next.phone = "请输入有效的手机号";
+    if (!wechat.trim()) next.wechat = "请填写微信号";
+    if (!intro.trim()) next.intro = "请填写作品简介";
+    if (intro.length > 200) next.intro = "简介不超过 200 字";
+    if (intro.length > 0 && intro.length <= 200 && !intro.trim()) next.intro = "请填写作品简介";
+    if (!file && !intro.trim()) next.file = "请上传作品文件";
+    setErrors(next);
+    return Object.keys(next).length === 0;
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    if (!validate()) return;
+    setSubmitting(true);
+    try {
+      let fileName = "";
+      if (file) {
+        const reader = new FileReader();
+        const data = await new Promise((resolve) => {
+          reader.onload = () => resolve(reader.result.split(",")[1]);
+          reader.readAsDataURL(file);
+        });
+        const uploadRes = await fetch("/api/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: file.name, data }),
+        });
+        if (!uploadRes.ok) {
+          let msg = "文件上传失败";
+          try { const err = await uploadRes.json(); if (err.error) msg = err.error; } catch {}
+          throw new Error(msg);
+        }
+        const uploadData = await uploadRes.json();
+        fileName = uploadData.path;
+      }
+      const res = await fetch("/api/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "short-film", name: name.trim(), phone, wechat: wechat.trim(),
+          intro: intro.trim(), fileName,
+        }),
+      });
+      if (!res.ok) {
+        let msg = "提交失败，请稍后重试";
+        try { const err = await res.json(); if (err.error) msg = err.error; } catch {}
+        throw new Error(msg);
+      }
+      const data = await res.json();
+      setSuccess(data.id);
+    } catch (err) {
+      setErrors((prev) => ({ ...prev, _form: err.message }));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (success) {
+    return (
+      <main className="page-main">
+        <section className="page-section success-section">
+          <div className="success-card">
+            <Check weight="bold" />
+            <h2>作品上传成功</h2>
+            <p>您的作品已提交，编号：<strong>{success}</strong></p>
+            <p>请扫描下方二维码加入企业微信群，获取大赛后续通知与交流机会。</p>
+            <img className="qrcode-img" src="/assets/weixin.png" alt="企业微信群二维码" />
+            <p className="muted">如二维码过期，请联系组委会工作人员</p>
+            <Button onClick={() => go("home")}>返回首页 <ArrowRight /></Button>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
+  return (
+    <main className="page-main">
+      <PageHero
+        kicker="SUBMIT YOUR WORK"
+        title="上传作品"
+        description="一分钟短片创作大赛 · 作品提交通道"
+        visual="one-minute.jpg"
+      />
+      <section className="page-section form-section">
+        <form className="upload-form" onSubmit={submit} noValidate>
+          <TextField label="姓名" required value={name} error={errors.name} onChange={setName} placeholder="您的姓名或团队名称" />
+          <TextField label="手机号" required type="tel" value={phone} error={errors.phone} onChange={setPhone} placeholder="11 位手机号" />
+          <TextField label="微信号" required value={wechat} error={errors.wechat} onChange={setWechat} placeholder="您的微信号" />
+          <TextareaField label="作品简介" required value={intro} error={errors.intro} maxLength={200} onChange={setIntro} placeholder="请用 200 字以内描述您的作品内容、创作思路与亮点。" />
+          <fieldset className={`upload-field ${errors.file ? "has-error" : ""}`}>
+            <legend>上传作品文件 <b>*</b></legend>
+            <label className="upload-box">
+              <CloudArrowUp />
+              <strong>{file ? file.name : "选择作品文件"}</strong>
+              <span>支持 JPG / PNG / WebP / PDF / MP4 / MOV / AVI / ZIP · 不超过 50MB</span>
+              <input type="file" accept=".jpg,.jpeg,.png,.webp,.pdf,.mp4,.mov,.avi,.zip" onChange={handleFile} />
+            </label>
+            {errors.file && <small>{errors.file}</small>}
+          </fieldset>
+          <p className="upload-terms">上传参赛即同意以上我们使用他们作品的权利</p>
+          {errors._form && <div className="error-banner">{errors._form}</div>}
+          <button className="button submit-button" type="submit" disabled={submitting}>
+            {submitting ? "提交中..." : "提交作品"} <ArrowRight weight="bold" />
+          </button>
+        </form>
       </section>
     </main>
   );
@@ -941,13 +1087,16 @@ export function App() {
     setFormType(type);
   };
 
+  const isUpload = route === "short-film/upload";
   useEffect(() => {
-    document.title = `${NAV_ITEMS.find((item) => item[1] === route)?.[0] || "首页"} | OPCWISE`;
-  }, [route]);
+    const label = isUpload ? "上传作品" : NAV_ITEMS.find((item) => item[1] === route)?.[0] || "首页";
+    document.title = `${label} | OPCWISE`;
+  }, [route, isUpload]);
 
   let page;
   const isAdmin = route === "admin";
   if (isAdmin) page = <AdminPage />;
+  else if (isUpload) page = <ShortFilmUploadPage />;
   else if (route === "about") page = <AboutPage openForm={openForm} />;
   else if (route === "schedule") page = <SchedulePage openForm={openForm} />;
   else if (route === "enterprise") page = <EnterprisePage openForm={openForm} />;

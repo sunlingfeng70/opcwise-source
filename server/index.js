@@ -87,6 +87,18 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_aigc_phone ON aigc_submissions(phone);
   CREATE INDEX IF NOT EXISTS idx_enterprise_phone ON enterprise_submissions(phone);
+
+  CREATE TABLE IF NOT EXISTS short_film_submissions (
+    id             TEXT PRIMARY KEY,
+    phone          TEXT NOT NULL,
+    name           TEXT NOT NULL,
+    wechat         TEXT NOT NULL,
+    intro          TEXT NOT NULL,
+    file_name      TEXT,
+    created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_short_film_phone ON short_film_submissions(phone);
 `);
 
 // ── Helpers ───────────────────────────────────────────────────────
@@ -121,7 +133,7 @@ function generateId(type) {
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
   const random = Math.random().toString(36).slice(2, 7).toUpperCase();
-  const prefix = type === "enterprise" ? "E" : "A";
+  const prefix = type === "short-film" ? "S" : type === "enterprise" ? "E" : "A";
   return `OPC-${prefix}-${y}${m}${d}-${random}`;
 }
 
@@ -147,8 +159,8 @@ function parseBody(req) {
 // ── Validation ────────────────────────────────────────────────────
 function validate(body) {
   const errors = [];
-  if (!body.type || !["aigc", "enterprise"].includes(body.type)) {
-    errors.push("type must be 'aigc' or 'enterprise'");
+  if (!body.type || !["aigc", "enterprise", "short-film"].includes(body.type)) {
+    errors.push("type must be 'aigc', 'enterprise', or 'short-film'");
   }
   if (!body.phone || !/^1[3-9]\d{9}$/.test(body.phone)) {
     errors.push("phone must be a valid Chinese mobile number");
@@ -162,6 +174,10 @@ function validate(body) {
     if (!body.paths?.length) errors.push("paths is required");
     if (!body.stage) errors.push("stage is required");
     if (!body.directions?.length) errors.push("directions is required");
+    if (!body.intro) errors.push("intro is required");
+  } else if (type === "short-film") {
+    if (!body.name) errors.push("name is required");
+    if (!body.wechat) errors.push("wechat is required");
     if (!body.intro) errors.push("intro is required");
   } else {
     if (!body.organization) errors.push("organization is required");
@@ -192,7 +208,7 @@ async function handleSubmit(req, res) {
 
   const { type, phone } = body;
   const id = generateId(type);
-  const table = type === "enterprise" ? "enterprise_submissions" : "aigc_submissions";
+  const table = type === "enterprise" ? "enterprise_submissions" : type === "short-film" ? "short_film_submissions" : "aigc_submissions";
 
   const existing = db.prepare(`SELECT id FROM ${table} WHERE phone = ?`).get(phone);
 
@@ -205,6 +221,13 @@ async function handleSubmit(req, res) {
       JSON.stringify(body.paths), body.stage, JSON.stringify(body.directions),
       body.intro, body.materialLinks || null, body.fileName || null,
     );
+  } else if (type === "short-film") {
+    db.prepare(
+      `INSERT INTO short_film_submissions (id, phone, name, wechat, intro, file_name)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    ).run(
+      id, phone, body.name, body.wechat, body.intro, body.fileName || null,
+    );
   } else {
     db.prepare(
       `INSERT INTO enterprise_submissions (id, phone, organization, industry, city, contact, wechat, needs, description, cooperation, material_link, file_name)
@@ -216,7 +239,8 @@ async function handleSubmit(req, res) {
     );
   }
 
-  logInfo("submit", (type === "enterprise" ? "Enterprise" : "AIGC") + " submission created", { id: id, phone: maskPhone(phone), duplicate: String(!!existing) });
+  const typeLabel = type === "short-film" ? "ShortFilm" : type === "enterprise" ? "Enterprise" : "AIGC";
+  logInfo("submit", typeLabel + " submission created", { id: id, phone: maskPhone(phone), duplicate: String(!!existing) });
   json(res, 200, { id, duplicate: !!existing });
 }
 
@@ -306,7 +330,7 @@ function handleAdminSubmissions(req, res) {
   const type = url.searchParams.get("type") || "aigc";
   const phone = url.searchParams.get("phone") || "";
 
-  const table = type === "enterprise" ? "enterprise_submissions" : "aigc_submissions";
+  const table = type === "short_film" ? "short_film_submissions" : type === "enterprise" ? "enterprise_submissions" : "aigc_submissions";
 
   let query = `SELECT * FROM ${table}`;
   const params = [];
