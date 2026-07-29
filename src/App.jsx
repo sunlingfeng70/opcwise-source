@@ -29,6 +29,7 @@ import {
 
 const NAV_ITEMS = [
   ["首页", "home"],
+  ["一分钟短片创作大赛", "short-film"],
   ["大会介绍", "about"],
   ["赛程与说明", "schedule"],
   ["企业需求", "enterprise"],
@@ -613,6 +614,27 @@ function OpcwisePage({ openForm }) {
   );
 }
 
+function ShortFilmPage() {
+  return (
+    <main className="page-main">
+      <PageHero
+        kicker="ONE-MINUTE SHORT FILM COMPETITION"
+        title="一分钟短片创作大赛"
+        description="用一分钟的影像，讲述你的创意。参赛作品版权及使用授权说明。"
+        visual="one-minute.jpg"
+      />
+      <section className="page-section prose-section">
+        <SectionHeading kicker="COPYRIGHT & USAGE RIGHTS" title="参赛作品版权及使用授权" />
+        <div className="legal-copy">
+          <p>作品著作权归创作者所有。自作品提交之日起，参赛者同意授予迈影公司永久、全球范围内、无偿、非独占的作品使用权。</p>
+          <p>迈影公司有权通过互联网平台、社交媒体、视频网站、官方网站、媒体报道、线下活动、展览、发布会及其他公开渠道，对全部参赛作品进行发布、传播、展示、放映和宣传。</p>
+          <p>为适应宣传、展示及不同平台的传播要求，迈影公司有权在不歪曲作品原意、不损害创作者合法权益的前提下，对参赛作品进行剪辑、节选、压缩、格式转换、添加字幕、增加片头片尾、制作宣传片段及其他必要编辑。</p>
+        </div>
+      </section>
+    </main>
+  );
+}
+
 const industryOptions = ["互联网/软件", "文化传媒", "消费零售", "制造业", "金融", "教育", "医疗健康", "文旅", "政府/园区", "其他"];
 const cityOptions = ["北京", "上海", "广州", "深圳", "杭州", "南京", "成都", "武汉", "西安", "其他"];
 const enterpriseNeeds = ["品牌宣传与广告", "短视频及账号内容", "产品展示与电商内容", "AI短剧、漫剧或影视内容", "数字人及虚拟IP", "文旅、园区及城市宣传", "企业培训及内部传播", "暂不确定，希望获得建议", "其他"];
@@ -930,6 +952,7 @@ export function App() {
   else if (route === "schedule") page = <SchedulePage openForm={openForm} />;
   else if (route === "enterprise") page = <EnterprisePage openForm={openForm} />;
   else if (route === "aigc") page = <AigcPage openForm={openForm} />;
+  else if (route === "short-film") page = <ShortFilmPage />;
   else if (route === "opcwise") page = <OpcwisePage openForm={openForm} />;
   else page = <HomePage onRegister={() => setChooser(true)} />;
 
