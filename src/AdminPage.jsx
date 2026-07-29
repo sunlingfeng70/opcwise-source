@@ -116,6 +116,7 @@ const SHORT_FILM_COLUMNS = [
   { key: "name", label: "姓名" },
   { key: "phone", label: "手机号" },
   { key: "wechat", label: "微信" },
+  { key: "work_title", label: "作品名称" },
   { key: "intro", label: "作品简介" },
   { key: "file_name", label: "上传文件", render: (v) => <FileCell value={v} /> },
 ];

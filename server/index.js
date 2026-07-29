@@ -93,6 +93,7 @@ db.exec(`
     phone          TEXT NOT NULL,
     name           TEXT NOT NULL,
     wechat         TEXT NOT NULL,
+    work_title     TEXT NOT NULL DEFAULT '',
     intro          TEXT NOT NULL,
     file_name      TEXT,
     created_at     TEXT NOT NULL DEFAULT (datetime('now'))
@@ -100,6 +101,9 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_short_film_phone ON short_film_submissions(phone);
 `);
+
+// Migration: add work_title column for existing databases
+try { db.prepare(`ALTER TABLE short_film_submissions ADD COLUMN work_title TEXT NOT NULL DEFAULT ''`).run(); } catch {}
 
 // ── Helpers ───────────────────────────────────────────────────────
 const MIME = {
@@ -178,6 +182,7 @@ function validate(body) {
   } else if (type === "short-film") {
     if (!body.name) errors.push("name is required");
     if (!body.wechat) errors.push("wechat is required");
+    if (!body.workTitle) errors.push("workTitle is required");
     if (!body.intro) errors.push("intro is required");
   } else {
     if (!body.organization) errors.push("organization is required");
@@ -223,10 +228,10 @@ async function handleSubmit(req, res) {
     );
   } else if (type === "short-film") {
     db.prepare(
-      `INSERT INTO short_film_submissions (id, phone, name, wechat, intro, file_name)
-       VALUES (?, ?, ?, ?, ?, ?)`
+      `INSERT INTO short_film_submissions (id, phone, name, wechat, work_title, intro, file_name)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
     ).run(
-      id, phone, body.name, body.wechat, body.intro, body.fileName || null,
+      id, phone, body.name, body.wechat, body.workTitle, body.intro, body.fileName || null,
     );
   } else {
     db.prepare(

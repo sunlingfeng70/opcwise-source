@@ -649,6 +649,7 @@ function ShortFilmUploadPage() {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [wechat, setWechat] = useState("");
+  const [workTitle, setWorkTitle] = useState("");
   const [intro, setIntro] = useState("");
   const [file, setFile] = useState(null);
   const [errors, setErrors] = useState({});
@@ -673,6 +674,7 @@ function ShortFilmUploadPage() {
     if (!name.trim()) next.name = "请填写姓名";
     if (!/^1[3-9]\d{9}$/.test(phone)) next.phone = "请输入有效的手机号";
     if (!wechat.trim()) next.wechat = "请填写微信号";
+    if (!workTitle.trim()) next.workTitle = "请填写作品名称";
     if (!intro.trim()) next.intro = "请填写作品简介";
     if (intro.length > 200) next.intro = "简介不超过 200 字";
     if (intro.length > 0 && intro.length <= 200 && !intro.trim()) next.intro = "请填写作品简介";
@@ -711,7 +713,7 @@ function ShortFilmUploadPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           type: "short-film", name: name.trim(), phone, wechat: wechat.trim(),
-          intro: intro.trim(), fileName,
+          workTitle: workTitle.trim(), intro: intro.trim(), fileName,
         }),
       });
       if (!res.ok) {
@@ -759,6 +761,7 @@ function ShortFilmUploadPage() {
           <TextField label="姓名" required value={name} error={errors.name} onChange={setName} placeholder="您的姓名或团队名称" />
           <TextField label="手机号" required type="tel" value={phone} error={errors.phone} onChange={setPhone} placeholder="11 位手机号" />
           <TextField label="微信号" required value={wechat} error={errors.wechat} onChange={setWechat} placeholder="您的微信号" />
+          <TextField label="作品名称" required value={workTitle} error={errors.workTitle} onChange={setWorkTitle} placeholder="您的作品名称" />
           <TextareaField label="作品简介" required value={intro} error={errors.intro} maxLength={200} onChange={setIntro} placeholder="请用 200 字以内描述您的作品内容、创作思路与亮点。" />
           <fieldset className={`upload-field ${errors.file ? "has-error" : ""}`}>
             <legend>上传作品文件 <b>*</b></legend>
