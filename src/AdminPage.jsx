@@ -67,7 +67,15 @@ function FileCell({ value }) {
   if (isImage) {
     return <img className="admin-thumb" src={value} alt="上传文件" />;
   }
-  return <a className="admin-file-link" href={value} target="_blank" rel="noopener noreferrer">PDF 文件 ↗</a>;
+  const isVideo = /\.(mp4|mov|avi)$/i.test(value);
+  if (isVideo) {
+    return <a className="admin-file-link" href={value} target="_blank" rel="noopener noreferrer">视频文件 ↗</a>;
+  }
+  const isPdf = /\.pdf$/i.test(value);
+  if (isPdf) {
+    return <a className="admin-file-link" href={value} target="_blank" rel="noopener noreferrer">PDF 文件 ↗</a>;
+  }
+  return <a className="admin-file-link" href={value} target="_blank" rel="noopener noreferrer">下载文件 ↗</a>;
 }
 
 const AIGC_COLUMNS = [
@@ -102,7 +110,52 @@ const ENTERPRISE_COLUMNS = [
   { key: "material_link", label: "材料链接" },
 ];
 
-function DataTable({ columns, rows, search, onSearchChange, onRefresh }) {
+const SHORT_FILM_COLUMNS = [
+  { key: "id", label: "编号" },
+  { key: "created_at", label: "提交时间" },
+  { key: "name", label: "姓名" },
+  { key: "phone", label: "手机号" },
+  { key: "wechat", label: "微信" },
+  { key: "intro", label: "作品简介" },
+  { key: "file_name", label: "上传文件", render: (v) => <FileCell value={v} /> },
+];
+
+function DetailModal({ submission, columns, onClose }) {
+  if (!submission) return null;
+  return (
+    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+      <div className="admin-detail-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <div className="admin-detail-header">
+          <h2>作品详情</h2>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="admin-detail-body">
+          {columns.map((col) => (
+            <div className="admin-detail-field" key={col.key}>
+              <label>{col.label}</label>
+              <div className="admin-detail-value">
+                {col.render ? col.render(submission[col.key]) : (submission[col.key] ?? "-")}
+              </div>
+            </div>
+          ))}
+          {submission.file_name && /\.(mp4|mov|avi)$/i.test(submission.file_name) && (
+            <div className="admin-detail-field">
+              <label>视频预览</label>
+              <video className="admin-video-preview" controls src={submission.file_name}>
+                您的浏览器不支持视频播放
+              </video>
+            </div>
+          )}
+        </div>
+        <div className="admin-detail-footer">
+          <button className="button" onClick={onClose}>关闭</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DataTable({ columns, rows, search, onSearchChange, onRefresh, onRowClick }) {
   return (
     <div className="admin-table-wrap">
       <div className="admin-table-toolbar">
@@ -136,7 +189,7 @@ function DataTable({ columns, rows, search, onSearchChange, onRefresh }) {
               </tr>
             ) : (
               rows.map((row) => (
-                <tr key={row.id}>
+                <tr key={row.id} className="admin-row" onClick={() => onRowClick?.(row)}>
                   {columns.map((col) => (
                     <td key={col.key}>
                       {col.render ? col.render(row[col.key]) : row[col.key] ?? "-"}
@@ -158,14 +211,16 @@ export function AdminPage() {
   const [rows, setRows] = useState([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
+  const [detail, setDetail] = useState(null);
 
-  const columns = tab === "aigc" ? AIGC_COLUMNS : ENTERPRISE_COLUMNS;
+  const columns = tab === "aigc" ? AIGC_COLUMNS : tab === "short_film" ? SHORT_FILM_COLUMNS : ENTERPRISE_COLUMNS;
 
   const fetchData = useCallback(async () => {
     if (!token) return;
     setLoading(true);
     try {
-      const params = new URLSearchParams({ type: tab });
+      const apiType = tab === "short_film" ? "short_film" : tab;
+      const params = new URLSearchParams({ type: apiType });
       if (search) params.set("phone", search);
       const res = await fetchWithAuth(`/api/admin/submissions?${params}`, token);
       if (res.status === 401) {
@@ -228,6 +283,12 @@ export function AdminPage() {
         >
           企业需求表
         </button>
+        <button
+          className={tab === "short_film" ? "admin-tab active" : "admin-tab"}
+          onClick={() => setTab("short_film")}
+        >
+          一分钟短片
+        </button>
       </nav>
 
       {loading ? (
@@ -239,6 +300,14 @@ export function AdminPage() {
           search={search}
           onSearchChange={setSearch}
           onRefresh={fetchData}
+          onRowClick={setDetail}
+        />
+      )}
+      {detail && (
+        <DetailModal
+          submission={detail}
+          columns={columns}
+          onClose={() => setDetail(null)}
         />
       )}
     </div>

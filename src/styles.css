@@ -2469,6 +2469,10 @@ p {
   background: #141414;
 }
 
+.admin-row {
+  cursor: pointer;
+}
+
 .admin-null {
   color: #555;
 }
@@ -2502,4 +2506,101 @@ p {
   text-align: center;
   padding: 40px;
   color: #666;
+}
+
+.admin-detail-modal {
+  background: #0d0d0d;
+  border: 1px solid #2a2a2a;
+  border-radius: 12px;
+  max-width: 640px;
+  width: 90%;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  margin: 5vh auto;
+}
+
+.admin-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 0;
+}
+
+.admin-detail-header h2 {
+  font-size: 18px;
+  color: #fff;
+  margin: 0;
+}
+
+.admin-detail-header .modal-close {
+  background: none;
+  border: none;
+  color: #666;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+}
+
+.admin-detail-header .modal-close:hover {
+  color: #fff;
+}
+
+.admin-detail-body {
+  padding: 16px 24px 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.admin-detail-field {
+  margin-bottom: 16px;
+}
+
+.admin-detail-field label {
+  display: block;
+  font-size: 11px;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.admin-detail-value {
+  font-size: 14px;
+  color: #ccc;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.admin-detail-field .admin-thumb {
+  width: 120px;
+  height: 120px;
+}
+
+.admin-detail-footer {
+  padding: 0 24px 20px;
+}
+
+.admin-detail-footer .button {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #333;
+  border-radius: 6px;
+  background: #1a1a1a;
+  color: #ccc;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.admin-detail-footer .button:hover {
+  background: #222;
+  color: #fff;
+}
+
+.admin-video-preview {
+  width: 100%;
+  max-height: 360px;
+  border-radius: 6px;
+  background: #000;
 }
