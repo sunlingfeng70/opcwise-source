@@ -118,8 +118,8 @@ const MIME = {
 const UPLOAD_DIR = join(ROOT, "uploads");
 if (!existsSync(UPLOAD_DIR)) mkdirSync(UPLOAD_DIR, { recursive: true });
 
-const ALLOWED_UPLOAD_EXT = [".jpg", ".jpeg", ".png", ".webp", ".pdf"];
-const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB
+const ALLOWED_UPLOAD_EXT = [".jpg", ".jpeg", ".png", ".webp", ".pdf", ".mp4", ".mov", ".avi", ".zip"];
+const MAX_UPLOAD_BYTES = 500 * 1024 * 1024; // 500 MB
 
 function safeFilename(original) {
   const ext = extname(original).toLowerCase();

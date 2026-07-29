@@ -659,8 +659,8 @@ function ShortFilmUploadPage() {
     const next = event.target.files?.[0] || null;
     if (!next) return setFile(null);
     const ext = next.name.slice(next.name.lastIndexOf(".")).toLowerCase();
-    if (![".jpg", ".jpeg", ".png", ".webp", ".pdf", ".mp4", ".mov", ".avi", ".zip"].includes(ext) || next.size > 50 * 1024 * 1024) {
-      setErrors((prev) => ({ ...prev, file: "支持 JPG/PNG/WebP/PDF/MP4/MOV/AVI/ZIP，不超过 50MB" }));
+    if (![".jpg", ".jpeg", ".png", ".webp", ".pdf", ".mp4", ".mov", ".avi", ".zip"].includes(ext) || next.size > 500 * 1024 * 1024) {
+      setErrors((prev) => ({ ...prev, file: "支持 JPG/PNG/WebP/PDF/MP4/MOV/AVI/ZIP，不超过 500MB" }));
       event.target.value = "";
       return setFile(null);
     }
@@ -765,7 +765,7 @@ function ShortFilmUploadPage() {
             <label className="upload-box">
               <CloudArrowUp />
               <strong>{file ? file.name : "选择作品文件"}</strong>
-              <span>支持 JPG / PNG / WebP / PDF / MP4 / MOV / AVI / ZIP · 不超过 50MB</span>
+              <span>支持 JPG / PNG / WebP / PDF / MP4 / MOV / AVI / ZIP · 不超过 500MB</span>
               <input type="file" accept=".jpg,.jpeg,.png,.webp,.pdf,.mp4,.mov,.avi,.zip" onChange={handleFile} />
             </label>
             {errors.file && <small>{errors.file}</small>}
