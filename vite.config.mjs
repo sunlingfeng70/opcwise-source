@@ -11,7 +11,7 @@ export default defineConfig({
   server: {
     host: "0.0.0.0",
     port: 80,
-    allowedHosts: ["all"],
+    allowedHosts: ["www.opcwise.com"],
     warmup: {
       clientFiles: ["./src/main.jsx"],
     },
