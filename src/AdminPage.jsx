@@ -7,8 +7,9 @@ function go(route) {
   window.scrollTo({ top: 0 });
 }
 
-function fetchWithAuth(url, token) {
+function fetchWithAuth(url, token, method) {
   return fetch(url, {
+    method: method || "GET",
     headers: { Authorization: `Bearer ${token}` },
   });
 }
@@ -121,7 +122,7 @@ const SHORT_FILM_COLUMNS = [
   { key: "file_name", label: "上传文件", render: (v) => <FileCell value={v} /> },
 ];
 
-function DetailModal({ submission, columns, onClose }) {
+function DetailModal({ submission, columns, onClose, onDelete }) {
   if (!submission) return null;
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
@@ -149,6 +150,7 @@ function DetailModal({ submission, columns, onClose }) {
           )}
         </div>
         <div className="admin-detail-footer">
+          <button className="button admin-delete-btn" onClick={() => { onDelete(submission); onClose(); }}>删除</button>
           <button className="button" onClick={onClose}>关闭</button>
         </div>
       </div>
@@ -156,7 +158,16 @@ function DetailModal({ submission, columns, onClose }) {
   );
 }
 
-function DataTable({ columns, rows, search, onSearchChange, onRefresh, onRowClick }) {
+function DeleteBtn({ onClick }) {
+  return (
+    <button className="admin-delete-btn" onClick={(e) => { e.stopPropagation(); onClick(); }}>
+      删除
+    </button>
+  );
+}
+
+function DataTable({ columns, rows, search, onSearchChange, onRefresh, onRowClick, onDelete }) {
+  const cols = onDelete ? [...columns, { key: "_action", label: "操作" }] : columns;
   return (
     <div className="admin-table-wrap">
       <div className="admin-table-toolbar">
@@ -176,7 +187,7 @@ function DataTable({ columns, rows, search, onSearchChange, onRefresh, onRowClic
         <table className="admin-table">
           <thead>
             <tr>
-              {columns.map((col) => (
+              {cols.map((col) => (
                 <th key={col.key}>{col.label}</th>
               ))}
             </tr>
@@ -184,16 +195,19 @@ function DataTable({ columns, rows, search, onSearchChange, onRefresh, onRowClic
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={columns.length} className="admin-empty">
+                <td colSpan={cols.length} className="admin-empty">
                   暂无数据
                 </td>
               </tr>
             ) : (
               rows.map((row) => (
                 <tr key={row.id} className="admin-row" onClick={() => onRowClick?.(row)}>
-                  {columns.map((col) => (
+                  {cols.map((col) => (
                     <td key={col.key}>
-                      {col.render ? col.render(row[col.key]) : row[col.key] ?? "-"}
+                      {col.key === "_action"
+                        ? <DeleteBtn onClick={() => onDelete(row)} />
+                        : col.render ? col.render(row[col.key]) : row[col.key] ?? "-"
+                      }
                     </td>
                   ))}
                 </tr>
@@ -215,6 +229,28 @@ export function AdminPage() {
   const [detail, setDetail] = useState(null);
 
   const columns = tab === "aigc" ? AIGC_COLUMNS : tab === "short_film" ? SHORT_FILM_COLUMNS : ENTERPRISE_COLUMNS;
+
+  const handleDelete = useCallback(async (row) => {
+    setLoading(true);
+    try {
+      const res = await fetchWithAuth(`/api/admin/submissions/${row.id}`, token, "DELETE");
+      if (res.status === 401) {
+        localStorage.removeItem(TOKEN_KEY);
+        setToken(null);
+        return;
+      }
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "删除失败");
+      }
+      setRows((prev) => prev.filter((r) => r.id !== row.id));
+      setDetail((prev) => (prev?.id === row.id ? null : prev));
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
 
   const fetchData = useCallback(async () => {
     if (!token) return;
@@ -302,6 +338,7 @@ export function AdminPage() {
           onSearchChange={setSearch}
           onRefresh={fetchData}
           onRowClick={setDetail}
+          onDelete={handleDelete}
         />
       )}
       {detail && (
@@ -309,6 +346,7 @@ export function AdminPage() {
           submission={detail}
           columns={columns}
           onClose={() => setDetail(null)}
+          onDelete={handleDelete}
         />
       )}
     </div>

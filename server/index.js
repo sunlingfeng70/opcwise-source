@@ -112,6 +112,10 @@ db.exec(`
 
 // Migration: add work_title column for existing databases
 try { db.prepare(`ALTER TABLE short_film_submissions ADD COLUMN work_title TEXT NOT NULL DEFAULT ''`).run(); } catch {}
+// Migration: add deleted_at column for soft delete
+try { db.prepare(`ALTER TABLE aigc_submissions ADD COLUMN deleted_at TEXT`).run(); } catch {}
+try { db.prepare(`ALTER TABLE enterprise_submissions ADD COLUMN deleted_at TEXT`).run(); } catch {}
+try { db.prepare(`ALTER TABLE short_film_submissions ADD COLUMN deleted_at TEXT`).run(); } catch {}
 
 // ── Helpers ───────────────────────────────────────────────────────
 const MIME = {
@@ -121,9 +125,19 @@ const MIME = {
   ".json": "application/json",
   ".png": "image/png",
   ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
   ".webp": "image/webp",
   ".svg": "image/svg+xml",
   ".ico": "image/x-icon",
+  ".mp4": "video/mp4",
+  ".mov": "video/quicktime",
+  ".avi": "video/x-msvideo",
+  ".pdf": "application/pdf",
+  ".zip": "application/zip",
+  ".doc": "application/msword",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".ppt": "application/vnd.ms-powerpoint",
+  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 };
 
 // ── File upload ────────────────────────────────────────────────────
@@ -131,7 +145,7 @@ const UPLOAD_DIR = join(ROOT, "uploads");
 if (!existsSync(UPLOAD_DIR)) mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const ALLOWED_UPLOAD_EXT = [".jpg", ".jpeg", ".png", ".webp", ".pdf", ".mp4", ".mov", ".avi", ".zip"];
-const MAX_UPLOAD_BYTES = 500 * 1024 * 1024; // 500 MB
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 50 MB
 
 function safeFilename(original) {
   const ext = extname(original).toLowerCase();
@@ -282,7 +296,7 @@ async function handleUpload(req, res) {
 
   if (buffer.length > MAX_UPLOAD_BYTES) {
     logWarn("upload", "File too large", { name: name, size: String(buffer.length) });
-  return json(res, 400, { error: "文件过大，请上传不超过 500MB 的文件" });
+  return json(res, 400, { error: "文件过大，请上传不超过 50MB 的文件" });
   }
 
   let safeName;
@@ -358,15 +372,15 @@ function handleAdminSubmissions(req, res) {
 
   const table = type === "short_film" ? "short_film_submissions" : type === "enterprise" ? "enterprise_submissions" : "aigc_submissions";
 
-  let query = `SELECT * FROM ${table}`;
+  const conditions = ["deleted_at IS NULL"];
   const params = [];
 
   if (phone) {
-    query += ` WHERE phone LIKE ?`;
+    conditions.push("phone LIKE ?");
     params.push(`%${phone}%`);
   }
 
-  query += ` ORDER BY created_at DESC LIMIT 200`;
+  const query = `SELECT * FROM ${table} WHERE ${conditions.join(" AND ")} ORDER BY created_at DESC LIMIT 200`;
 
   const rows = db.prepare(query).all(...params);
 
@@ -379,6 +393,24 @@ function handleAdminSubmissions(req, res) {
 
   logInfo("query", "Admin queried submissions", { type: type, phone: phone ? maskPhone(phone) : "all", count: String(parsed.length) });
   json(res, 200, { data: parsed, total: parsed.length });
+}
+
+function handleAdminDeleteSubmission(req, res) {
+  const url = new URL(req.url, "http://localhost");
+  const id = url.pathname.replace("/api/admin/submissions/", "");
+  if (!id) return json(res, 400, { error: "缺少 ID" });
+
+  const tables = ["aigc_submissions", "enterprise_submissions", "short_film_submissions"];
+  let found = false;
+  for (const table of tables) {
+    const result = db.prepare(`UPDATE ${table} SET deleted_at = datetime('now') WHERE id = ? AND deleted_at IS NULL`).run(id);
+    if (result.changes > 0) { found = true; break; }
+  }
+
+  if (!found) return json(res, 404, { error: "记录不存在或已删除" });
+
+  logInfo("delete", "Submission soft-deleted", { id });
+  json(res, 200, { success: true });
 }
 
 function tryParseJSON(str) {
@@ -436,6 +468,11 @@ const server = createServer(async (req, res) => {
 
     if (url === "/api/admin/login" && method === "POST") {
       return await handleAdminLogin(req, res);
+    }
+
+    if (url.startsWith("/api/admin/submissions/") && method === "DELETE") {
+      if (!requireAdmin(res, req)) return json(res, 401, { error: "未登录" });
+      return handleAdminDeleteSubmission(req, res);
     }
 
     if (url.startsWith("/api/admin/submissions") && method === "GET") {

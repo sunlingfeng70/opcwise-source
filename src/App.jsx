@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AdminPage } from "./AdminPage";
 import {
   ArrowRight,
@@ -655,18 +655,75 @@ function ShortFilmUploadPage() {
   const [errors, setErrors] = useState({});
   const [success, setSuccess] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [uploadState, setUploadState] = useState({ status: 'idle', progress: 0, fileName: '', error: '' });
+  const uploadXhr = useRef(null);
 
   function handleFile(event) {
     const next = event.target.files?.[0] || null;
     if (!next) return setFile(null);
     const ext = next.name.slice(next.name.lastIndexOf(".")).toLowerCase();
-    if (![".jpg", ".jpeg", ".png", ".webp", ".pdf", ".mp4", ".mov", ".avi", ".zip"].includes(ext) || next.size > 500 * 1024 * 1024) {
-      setErrors((prev) => ({ ...prev, file: "支持 JPG/PNG/WebP/PDF/MP4/MOV/AVI/ZIP，不超过 500MB" }));
+    if (![".jpg", ".jpeg", ".png", ".webp", ".pdf", ".mp4", ".mov", ".avi", ".zip"].includes(ext) || next.size > 50 * 1024 * 1024) {
+      setErrors((prev) => ({ ...prev, file: "支持 JPG/PNG/WebP/PDF/MP4/MOV/AVI/ZIP，不超过 50MB" }));
       event.target.value = "";
       return setFile(null);
     }
     setErrors((prev) => ({ ...prev, file: "" }));
     setFile(next);
+    startUpload(next);
+  }
+
+  async function startUpload(file) {
+    const prev = uploadXhr.current;
+    uploadXhr.current = null;
+    if (prev) prev.abort();
+    setUploadState({ status: 'reading', progress: 0, fileName: '', error: '' });
+    try {
+      const data = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(",")[1]);
+        reader.onerror = () => reject(new Error("文件读取失败"));
+        reader.readAsDataURL(file);
+      });
+      setUploadState((prev) => ({ ...prev, status: 'uploading' }));
+      await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        uploadXhr.current = xhr;
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) setUploadState((prev) => ({ ...prev, progress: Math.round((e.loaded / e.total) * 100) }));
+        };
+        xhr.onload = () => {
+          if (uploadXhr.current !== xhr) return;
+          if (xhr.status === 200) {
+            const res = JSON.parse(xhr.responseText);
+            setUploadState({ status: 'done', progress: 100, fileName: res.path, error: '' });
+            resolve();
+          } else {
+            let msg = "文件上传失败";
+            try { const err = JSON.parse(xhr.responseText); if (err.error) msg = err.error; } catch {}
+            setUploadState({ status: 'error', progress: 0, fileName: '', error: msg });
+            reject(new Error(msg));
+          }
+        };
+        xhr.onerror = () => {
+          if (uploadXhr.current !== xhr) return;
+          setUploadState({ status: 'error', progress: 0, fileName: '', error: "无法连接服务器，请确认后端服务已启动" });
+          reject(new Error("网络错误"));
+        };
+        xhr.onabort = () => {
+          if (uploadXhr.current === xhr) {
+            setUploadState({ status: 'idle', progress: 0, fileName: '', error: '' });
+            uploadXhr.current = null;
+          }
+        };
+        xhr.open("POST", "/api/upload");
+        xhr.setRequestHeader("Content-Type", "application/json");
+        xhr.send(JSON.stringify({ name: file.name, data }));
+      });
+    } catch (err) {
+      if (!uploadXhr.current) return;
+      if (err.message === "网络错误") return;
+      setUploadState({ status: 'error', progress: 0, fileName: '', error: err.message || "文件上传失败" });
+    }
   }
 
   function validate() {
@@ -678,7 +735,8 @@ function ShortFilmUploadPage() {
     if (!intro.trim()) next.intro = "请填写作品简介";
     if (intro.length > 200) next.intro = "简介不超过 200 字";
     if (intro.length > 0 && intro.length <= 200 && !intro.trim()) next.intro = "请填写作品简介";
-    if (!file && !intro.trim()) next.file = "请上传作品文件";
+    if (!file && !uploadState.fileName && !intro.trim()) next.file = "请上传作品文件";
+    if (file && uploadState.status === 'error') next.file = "文件上传失败，请重新选择文件";
     setErrors(next);
     return Object.keys(next).length === 0;
   }
@@ -686,34 +744,18 @@ function ShortFilmUploadPage() {
   async function submit(event) {
     event.preventDefault();
     if (!validate()) return;
+    if (uploadState.status === 'uploading' || uploadState.status === 'reading') {
+      setErrors((prev) => ({ ...prev, _form: "文件上传中，请稍后..." }));
+      return;
+    }
     setSubmitting(true);
     try {
-      let fileName = "";
-      if (file) {
-        const reader = new FileReader();
-        const data = await new Promise((resolve) => {
-          reader.onload = () => resolve(reader.result.split(",")[1]);
-          reader.readAsDataURL(file);
-        });
-        const uploadRes = await fetch("/api/upload", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: file.name, data }),
-        });
-        if (!uploadRes.ok) {
-          let msg;
-          try { const err = await uploadRes.json(); if (err.error) msg = err.error; } catch { msg = `服务器返回异常（${uploadRes.status}），请重试`; }
-          throw new Error(msg);
-        }
-        const uploadData = await uploadRes.json();
-        fileName = uploadData.path;
-      }
       const res = await fetch("/api/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           type: "short-film", name: name.trim(), phone, wechat: wechat.trim(),
-          workTitle: workTitle.trim(), intro: intro.trim(), fileName,
+          workTitle: workTitle.trim(), intro: intro.trim(), fileName: uploadState.fileName || "",
         }),
       });
       if (!res.ok) {
@@ -769,9 +811,32 @@ function ShortFilmUploadPage() {
           <fieldset className={`upload-field ${errors.file ? "has-error" : ""}`}>
             <legend>上传作品文件 <b>*</b></legend>
             <label className="upload-box">
-              <CloudArrowUp />
-              <strong>{file ? file.name : "选择作品文件"}</strong>
-              <span>支持 JPG / PNG / WebP / PDF / MP4 / MOV / AVI / ZIP · 不超过 500MB</span>
+              {uploadState.status === 'reading' ? (
+                <><strong>正在读取文件...</strong></>
+              ) : uploadState.status === 'uploading' ? (
+                <>
+                  <div className="upload-progress-bar"><div className="upload-progress-fill" style={{ width: uploadState.progress + '%' }} /></div>
+                  <strong className="upload-status-uploading">上传中 {uploadState.progress}%</strong>
+                </>
+              ) : uploadState.status === 'done' ? (
+                <>
+                  <Check weight="bold" />
+                  <strong>{file ? file.name : "文件已上传"}</strong>
+                  <span className="upload-status-done">上传成功</span>
+                </>
+              ) : uploadState.status === 'error' ? (
+                <>
+                  <CloudArrowUp />
+                  <strong>上传失败，点击重试</strong>
+                  <span className="upload-status-error">{uploadState.error}</span>
+                </>
+              ) : (
+                <>
+                  <CloudArrowUp />
+                  <strong>选择作品文件</strong>
+                  <span>支持 JPG / PNG / WebP / PDF / MP4 / MOV / AVI / ZIP · 不超过 50MB</span>
+                </>
+              )}
               <input type="file" accept=".jpg,.jpeg,.png,.webp,.pdf,.mp4,.mov,.avi,.zip" onChange={handleFile} />
             </label>
             {errors.file && <small>{errors.file}</small>}
@@ -807,6 +872,8 @@ function FormModal({ type, onClose }) {
   }, [isEnterprise]);
   const [values, setValues] = useState(initial);
   const [file, setFile] = useState(null);
+  const [uploadState, setUploadState] = useState({ status: 'idle', progress: 0, fileName: '', error: '' });
+  const uploadXhr = useRef(null);
   const [errors, setErrors] = useState({});
   const [success, setSuccess] = useState(null);
   const [duplicate, setDuplicate] = useState(false);
@@ -843,6 +910,61 @@ function FormModal({ type, onClose }) {
     }
     setErrors((current) => ({ ...current, file: "" }));
     setFile(next);
+    startUpload(next);
+  }
+
+  async function startUpload(file) {
+    const prev = uploadXhr.current;
+    uploadXhr.current = null;
+    if (prev) prev.abort();
+    setUploadState({ status: 'reading', progress: 0, fileName: '', error: '' });
+    try {
+      const data = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(",")[1]);
+        reader.onerror = () => reject(new Error("文件读取失败"));
+        reader.readAsDataURL(file);
+      });
+      setUploadState((prev) => ({ ...prev, status: 'uploading' }));
+      await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        uploadXhr.current = xhr;
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) setUploadState((prev) => ({ ...prev, progress: Math.round((e.loaded / e.total) * 100) }));
+        };
+        xhr.onload = () => {
+          if (uploadXhr.current !== xhr) return;
+          if (xhr.status === 200) {
+            const res = JSON.parse(xhr.responseText);
+            setUploadState({ status: 'done', progress: 100, fileName: res.path, error: '' });
+            resolve();
+          } else {
+            let msg = "文件上传失败";
+            try { const err = JSON.parse(xhr.responseText); if (err.error) msg = err.error; } catch {}
+            setUploadState({ status: 'error', progress: 0, fileName: '', error: msg });
+            reject(new Error(msg));
+          }
+        };
+        xhr.onerror = () => {
+          if (uploadXhr.current !== xhr) return;
+          setUploadState({ status: 'error', progress: 0, fileName: '', error: "无法连接服务器，请确认后端服务已启动" });
+          reject(new Error("网络错误"));
+        };
+        xhr.onabort = () => {
+          if (uploadXhr.current === xhr) {
+            setUploadState({ status: 'idle', progress: 0, fileName: '', error: '' });
+            uploadXhr.current = null;
+          }
+        };
+        xhr.open("POST", "/api/upload");
+        xhr.setRequestHeader("Content-Type", "application/json");
+        xhr.send(JSON.stringify({ name: file.name, data }));
+      });
+    } catch (err) {
+      if (!uploadXhr.current) return;
+      if (err.message === "网络错误") return;
+      setUploadState({ status: 'error', progress: 0, fileName: '', error: err.message || "文件上传失败" });
+    }
   }
 
   function validate() {
@@ -856,7 +978,8 @@ function FormModal({ type, onClose }) {
     if (values.phone && !/^1[3-9]\d{9}$/.test(values.phone)) next.phone = "请输入有效的中国大陆手机号";
     if (isEnterprise && values.description.length > 100) next.description = "需求描述请控制在 100 字以内";
     if (!isEnterprise && values.intro.length > 300) next.intro = "一句话介绍请控制在 300 字以内";
-    if (!isEnterprise && !file && !values.materialLinks.trim()) next.materials = "请上传一份材料，或填写至少一个材料链接";
+    if (!isEnterprise && !file && !uploadState.fileName && !values.materialLinks.trim()) next.materials = "请上传一份材料，或填写至少一个材料链接";
+    if (!isEnterprise && file && uploadState.status === 'error') next.file = "文件上传失败，请重新选择文件";
     setErrors(next);
     return Object.keys(next).length === 0;
   }
@@ -864,28 +987,12 @@ function FormModal({ type, onClose }) {
   async function submit(event) {
     event.preventDefault();
     if (!validate()) return;
+    if (uploadState.status === 'uploading' || uploadState.status === 'reading') {
+      setErrors((current) => ({ ...current, _form: "文件上传中，请稍后..." }));
+      return;
+    }
     try {
-      let fileName = "";
-      if (file) {
-        const reader = new FileReader();
-        const data = await new Promise((resolve) => {
-          reader.onload = () => resolve(reader.result.split(",")[1]);
-          reader.readAsDataURL(file);
-        });
-        const uploadRes = await fetch("/api/upload", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: file.name, data }),
-        });
-        if (!uploadRes.ok) {
-          let msg;
-          try { const err = await uploadRes.json(); if (err.error) msg = err.error; } catch { msg = `服务器返回异常（${uploadRes.status}），请重试`; }
-          throw new Error(msg);
-        }
-        const uploadData = await uploadRes.json();
-        fileName = uploadData.path;
-      }
-      const body = { type, phone: values.phone, fileName, ...values };
+      const body = { type, phone: values.phone, fileName: uploadState.fileName || "", ...values };
       const res = await fetch("/api/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -949,7 +1056,7 @@ function FormModal({ type, onClose }) {
               <CheckboxGroup label="希望解决哪类问题" required options={enterpriseNeeds} values={values.needs} error={errors.needs} onToggle={(value) => toggle("needs", value)} />
               <TextareaField label="简单描述需求" required value={values.description} error={errors.description} maxLength={100} onChange={(value) => update("description", value)} placeholder="请说明目前遇到的问题、希望改善的业务环节或期待的结果。" />
               <RadioGroup label="当前合作意向" required options={cooperationOptions} value={values.cooperation} error={errors.cooperation} onChange={(value) => update("cooperation", value)} />
-              <MaterialField value={values.materialLink} onChange={(value) => update("materialLink", value)} file={file} error={errors.file} onFile={handleFile} required={false} />
+              <MaterialField value={values.materialLink} onChange={(value) => update("materialLink", value)} file={file} error={errors.file} onFile={handleFile} required={false} uploadState={uploadState} />
             </>
           ) : (
             <>
@@ -965,7 +1072,7 @@ function FormModal({ type, onClose }) {
               <RadioGroup label="目前达到的阶段" required options={stageOptions} value={values.stage} error={errors.stage} onChange={(value) => update("stage", value)} />
               <CheckboxGroup label="主要 AIGC 方向" required options={creatorDirections} values={values.directions} error={errors.directions} onToggle={(value) => toggle("directions", value)} />
               <TextareaField label="一句话介绍" required value={values.intro} error={errors.intro} maxLength={300} onChange={(value) => update("intro", value)} placeholder="说明你是谁、正在做什么、已有成果以及下一步希望获得什么资源。" />
-              <MaterialField value={values.materialLinks} onChange={(value) => update("materialLinks", value)} file={file} error={errors.file || errors.materials} onFile={handleFile} required />
+              <MaterialField value={values.materialLinks} onChange={(value) => update("materialLinks", value)} file={file} error={errors.file || errors.materials} onFile={handleFile} required uploadState={uploadState} />
             </>
           )}
           <div className="form-footer">
@@ -1046,15 +1153,42 @@ function RadioGroup({ label, required, options, value, error, onChange }) {
   );
 }
 
-function MaterialField({ value, onChange, file, error, onFile, max, required }) {
+function MaterialField({ value, onChange, file, error, onFile, max, required, uploadState }) {
   return (
     <fieldset className={`material-field ${error ? "has-error" : ""}`}>
       <legend>现有材料{required && <b> *</b>}</legend>
       <div className="material-grid">
         <label className="upload-box">
-          <CloudArrowUp />
-          <strong>{file ? file.name : "上传 1 份材料"}</strong>
-          <span>JPG / PNG / WebP / PDF · 不超过 10MB</span>
+          {uploadState && uploadState.status !== 'idle' ? (
+            <>
+              {uploadState.status === 'reading' ? (
+                <><strong>正在读取文件...</strong></>
+              ) : uploadState.status === 'uploading' ? (
+                <>
+                  <div className="upload-progress-bar"><div className="upload-progress-fill" style={{ width: uploadState.progress + '%' }} /></div>
+                  <strong className="upload-status-uploading">上传中 {uploadState.progress}%</strong>
+                </>
+              ) : uploadState.status === 'done' ? (
+                <>
+                  <Check weight="bold" />
+                  <strong>{file ? file.name : "材料已上传"}</strong>
+                  <span className="upload-status-done">上传成功</span>
+                </>
+              ) : (
+                <>
+                  <CloudArrowUp />
+                  <strong>上传失败，点击重试</strong>
+                  <span className="upload-status-error">{uploadState.error}</span>
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              <CloudArrowUp />
+              <strong>{file ? file.name : "上传 1 份材料"}</strong>
+              <span>JPG / PNG / WebP / PDF · 不超过{max ? max + "MB" : "10MB"}</span>
+            </>
+          )}
           <input type="file" accept=".jpg,.jpeg,.png,.webp,.pdf" onChange={onFile} />
         </label>
         <label className="link-box">
