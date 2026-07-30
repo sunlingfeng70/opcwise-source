@@ -120,6 +120,7 @@ const SHORT_FILM_COLUMNS = [
   { key: "work_title", label: "作品名称" },
   { key: "intro", label: "作品简介" },
   { key: "file_name", label: "上传文件", render: (v) => <FileCell value={v} /> },
+  { key: "file_link", label: "作品链接", render: (v) => v ? <a className="admin-file-link" href={v} target="_blank" rel="noopener noreferrer">查看链接 ↗</a> : <span className="admin-null">-</span> },
 ];
 
 function DetailModal({ submission, columns, onClose, onDelete }) {

@@ -656,6 +656,10 @@ function ShortFilmUploadPage() {
   const [success, setSuccess] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [uploadState, setUploadState] = useState({ status: 'idle', progress: 0, fileName: '', error: '' });
+  const [link, setLink] = useState("");
+  const [linkStatus, setLinkStatus] = useState('idle'); // idle | validating | valid | invalid
+  const [linkError, setLinkError] = useState("");
+  const [linkId, setLinkId] = useState(0);
   const [agreed, setAgreed] = useState(false);
   const uploadXhr = useRef(null);
 
@@ -670,6 +674,9 @@ function ShortFilmUploadPage() {
     }
     setErrors((prev) => ({ ...prev, file: "" }));
     setFile(next);
+    setLink("");
+    setLinkStatus('idle');
+    setLinkError("");
     startUpload(next);
   }
 
@@ -727,6 +734,38 @@ function ShortFilmUploadPage() {
     }
   }
 
+  function handleLinkChange(value) {
+    setLink(value);
+    setLinkStatus(value ? 'idle' : 'idle');
+    setLinkError("");
+    setErrors((prev) => ({ ...prev, file: "" }));
+  }
+
+  async function handleValidateLink() {
+    if (!link.trim()) return;
+    setLinkStatus('validating');
+    setLinkError("");
+    try {
+      const res = await fetch("/api/validate-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: link.trim() }),
+      });
+      const data = await res.json();
+      if (data.valid) {
+        setLinkStatus('valid');
+        setLinkId((prev) => prev + 1);
+        setFile(null);
+      } else {
+        setLinkStatus('invalid');
+        setLinkError(data.error || "链接无效");
+      }
+    } catch (err) {
+      setLinkStatus('invalid');
+      setLinkError("无法连接服务器，请稍后重试");
+    }
+  }
+
   function validate() {
     const next = {};
     if (!name.trim()) next.name = "请填写姓名";
@@ -736,7 +775,9 @@ function ShortFilmUploadPage() {
     if (!intro.trim()) next.intro = "请填写作品简介";
     if (intro.length > 200) next.intro = "简介不超过 200 字";
     if (intro.length > 0 && intro.length <= 200 && !intro.trim()) next.intro = "请填写作品简介";
-    if (!file && !uploadState.fileName && !intro.trim()) next.file = "请上传作品文件";
+    const hasFile = !!(file && uploadState.status === 'done');
+    const hasLink = linkStatus === 'valid';
+    if (!hasFile && !hasLink) next.file = "请上传作品文件或填写作品链接";
     if (file && uploadState.status === 'error') next.file = "文件上传失败，请重新选择文件";
     if (!agreed) next.agreed = "请阅读并同意版权条款";
     setErrors(next);
@@ -750,6 +791,10 @@ function ShortFilmUploadPage() {
       setErrors((prev) => ({ ...prev, _form: "文件上传中，请稍后..." }));
       return;
     }
+    if (linkStatus === 'validating') {
+      setErrors((prev) => ({ ...prev, _form: "链接验证中，请稍后..." }));
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await fetch("/api/submit", {
@@ -757,7 +802,9 @@ function ShortFilmUploadPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           type: "short-film", name: name.trim(), phone, wechat: wechat.trim(),
-          workTitle: workTitle.trim(), intro: intro.trim(), fileName: uploadState.fileName || "",
+          workTitle: workTitle.trim(), intro: intro.trim(),
+          fileName: uploadState.fileName || "",
+          fileLink: linkStatus === 'valid' ? link.trim() : "",
         }),
       });
       if (!res.ok) {
@@ -810,37 +857,51 @@ function ShortFilmUploadPage() {
           <TextField label="微信号" required value={wechat} error={errors.wechat} onChange={setWechat} placeholder="您的微信号" />
           <TextField label="作品名称" required value={workTitle} error={errors.workTitle} onChange={setWorkTitle} placeholder="您的作品名称" />
           <TextareaField label="作品简介" required value={intro} error={errors.intro} maxLength={200} onChange={setIntro} placeholder="请用 200 字以内描述您的作品内容、创作思路与亮点。" />
-          <fieldset className={`upload-field ${errors.file ? "has-error" : ""}`}>
-            <legend>上传作品文件 <b>*</b></legend>
-            <label className="upload-box">
-              {uploadState.status === 'reading' ? (
-                <><strong>正在读取文件...</strong></>
-              ) : uploadState.status === 'uploading' ? (
-                <>
-                  <div className="upload-progress-bar"><div className="upload-progress-fill" style={{ width: uploadState.progress + '%' }} /></div>
-                  <strong className="upload-status-uploading">上传中 {uploadState.progress}%</strong>
-                </>
-              ) : uploadState.status === 'done' ? (
-                <>
-                  <Check weight="bold" />
-                  <strong>{file ? file.name : "文件已上传"}</strong>
-                  <span className="upload-status-done">上传成功</span>
-                </>
-              ) : uploadState.status === 'error' ? (
-                <>
-                  <CloudArrowUp />
-                  <strong>上传失败，点击重试</strong>
-                  <span className="upload-status-error">{uploadState.error}</span>
-                </>
-              ) : (
-                <>
-                  <CloudArrowUp />
-                  <strong>选择作品文件</strong>
-                  <span>支持 JPG / PNG / WebP / PDF / MP4 / MOV / AVI / ZIP · 不超过 50MB</span>
-                </>
-              )}
-              <input type="file" accept=".jpg,.jpeg,.png,.webp,.pdf,.mp4,.mov,.avi,.zip" onChange={handleFile} />
-            </label>
+          <fieldset className={`material-field ${errors.file ? "has-error" : ""}`}>
+            <legend>作品文件 <b>*</b></legend>
+            <div className="material-grid">
+              <label className={`upload-box ${linkStatus === 'valid' ? 'disabled' : ''}`}>
+                {uploadState.status === 'reading' ? (
+                  <><strong>正在读取文件...</strong></>
+                ) : uploadState.status === 'uploading' ? (
+                  <>
+                    <div className="upload-progress-bar"><div className="upload-progress-fill" style={{ width: uploadState.progress + '%' }} /></div>
+                    <strong className="upload-status-uploading">上传中 {uploadState.progress}%</strong>
+                  </>
+                ) : uploadState.status === 'done' ? (
+                  <>
+                    <Check weight="bold" />
+                    <strong>{file ? file.name : "文件已上传"}</strong>
+                    <span className="upload-status-done">上传成功</span>
+                  </>
+                ) : uploadState.status === 'error' ? (
+                  <>
+                    <CloudArrowUp />
+                    <strong>上传失败，点击重试</strong>
+                    <span className="upload-status-error">{uploadState.error}</span>
+                  </>
+                ) : (
+                  <>
+                    <CloudArrowUp />
+                    <strong>上传作品文件</strong>
+                    <span>JPG / PNG / WebP / PDF / MP4 / MOV / AVI / ZIP · 不超过 50MB</span>
+                  </>
+                )}
+                <input type="file" accept=".jpg,.jpeg,.png,.webp,.pdf,.mp4,.mov,.avi,.zip" onChange={handleFile} disabled={linkStatus === 'valid'} />
+              </label>
+              <div className="link-box">
+                <span>或提供作品在线链接</span>
+                <div className="link-input-row">
+                  <input type="url" className="link-input" value={link} onChange={(e) => handleLinkChange(e.target.value)} placeholder="https://..." disabled={uploadState.status === 'done' || uploadState.status === 'uploading' || uploadState.status === 'reading'} />
+                  <button type="button" className="link-validate-btn" onClick={handleValidateLink} disabled={!link.trim() || linkStatus === 'validating' || uploadState.status === 'done' || uploadState.status === 'uploading' || uploadState.status === 'reading'}>
+                    {linkStatus === 'validating' ? '验证中...' : '验证链接'}
+                  </button>
+                </div>
+                {linkStatus === 'valid' && <span className="link-status-valid"><Check weight="bold" /> 链接已验证</span>}
+                {linkStatus === 'invalid' && <span className="link-status-invalid">链接无效：{linkError}</span>}
+                {linkStatus === 'idle' && link && <span className="link-status-idle">请点击"验证链接"确认链接可访问</span>}
+              </div>
+            </div>
             {errors.file && <small>{errors.file}</small>}
           </fieldset>
           <label className={`copyright-agreement ${errors.agreed ? "has-error" : ""}`}>
@@ -857,7 +918,7 @@ function ShortFilmUploadPage() {
             {errors.agreed && <small>请阅读并同意版权条款</small>}
           </label>
           {errors._form && <div className="error-banner">{errors._form}</div>}
-          <button className="button submit-button" type="submit" disabled={submitting || !agreed}>
+          <button className="button submit-button" type="submit" disabled={submitting || !agreed || linkStatus === 'validating'}>
             {submitting ? "提交中..." : "提交作品"} <ArrowRight weight="bold" />
           </button>
         </form>

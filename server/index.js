@@ -116,6 +116,8 @@ try { db.prepare(`ALTER TABLE short_film_submissions ADD COLUMN work_title TEXT 
 try { db.prepare(`ALTER TABLE aigc_submissions ADD COLUMN deleted_at TEXT`).run(); } catch {}
 try { db.prepare(`ALTER TABLE enterprise_submissions ADD COLUMN deleted_at TEXT`).run(); } catch {}
 try { db.prepare(`ALTER TABLE short_film_submissions ADD COLUMN deleted_at TEXT`).run(); } catch {}
+// Migration: add file_link column for link-based short film submissions
+try { db.prepare(`ALTER TABLE short_film_submissions ADD COLUMN file_link TEXT`).run(); } catch {}
 
 // ── Helpers ───────────────────────────────────────────────────────
 const MIME = {
@@ -202,10 +204,11 @@ function validate(body) {
     if (!body.directions?.length) errors.push("directions is required");
     if (!body.intro) errors.push("intro is required");
   } else if (type === "short-film") {
-    if (!body.name) errors.push("name is required");
+    if (!body.name)     errors.push("name is required");
     if (!body.wechat) errors.push("wechat is required");
     if (!body.workTitle) errors.push("workTitle is required");
     if (!body.intro) errors.push("intro is required");
+    if (!body.fileName && !body.fileLink) errors.push("请上传作品文件或提供作品链接");
   } else {
     if (!body.organization) errors.push("organization is required");
     if (!body.industry) errors.push("industry is required");
@@ -250,10 +253,10 @@ async function handleSubmit(req, res) {
     );
   } else if (type === "short-film") {
     db.prepare(
-      `INSERT INTO short_film_submissions (id, phone, name, wechat, work_title, intro, file_name)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO short_film_submissions (id, phone, name, wechat, work_title, intro, file_name, file_link)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
-      id, phone, body.name, body.wechat, body.workTitle, body.intro, body.fileName || null,
+      id, phone, body.name, body.wechat, body.workTitle, body.intro, body.fileName || null, body.fileLink || null,
     );
   } else {
     db.prepare(
@@ -418,6 +421,39 @@ function tryParseJSON(str) {
   catch { return str; }
 }
 
+// ── Validate link ──────────────────────────────────────────────────
+async function handleValidateLink(req, res) {
+  let body;
+  try { body = await parseBody(req); }
+  catch { return json(res, 400, { error: "Invalid JSON" }); }
+
+  const { url } = body;
+  if (!url || typeof url !== "string") {
+    return json(res, 400, { error: "请提供链接地址" });
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(url);
+    if (!["http:", "https:"].includes(parsed.protocol)) throw new Error();
+  } catch {
+    return json(res, 400, { error: "链接格式无效，请以 http:// 或 https:// 开头" });
+  }
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    const resp = await fetch(url, { method: "HEAD", signal: controller.signal });
+    clearTimeout(timer);
+    return json(res, 200, { valid: true, status: resp.status });
+  } catch (err) {
+    if (err.name === "AbortError") {
+      return json(res, 200, { valid: false, error: "链接访问超时，请检查链接是否可公开访问" });
+    }
+    return json(res, 200, { valid: false, error: "无法访问该链接，请确认链接地址正确且可公开访问" });
+  }
+}
+
 // ── Static file serving (production only) ────────────────────────
 function serveStatic(req, res) {
   let pathname = new URL(req.url, "http://localhost").pathname;
@@ -460,6 +496,10 @@ const server = createServer(async (req, res) => {
 
     if (url === "/api/upload" && method === "POST") {
       return await handleUpload(req, res);
+    }
+
+    if (url === "/api/validate-link" && method === "POST") {
+      return await handleValidateLink(req, res);
     }
 
     if (url.startsWith("/api/uploads/") && method === "GET") {

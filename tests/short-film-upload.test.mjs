@@ -60,7 +60,7 @@ describe("一分钟短片创作大赛 · 文件上传与提交", () => {
     const uploadDir = join(ROOT, "uploads");
     if (existsSync(uploadDir)) {
       for (const f of readdirSync(uploadDir)) {
-        if (f.includes("test-short-film")) {
+        if (/\.(mp4|mov|avi|zip)$/i.test(f)) {
           unlinkSync(join(uploadDir, f));
         }
       }
@@ -72,28 +72,28 @@ describe("一分钟短片创作大赛 · 文件上传与提交", () => {
     const res = await fetch("POST", "/api/upload", { name: "test-short-film.mp4", data });
     assert.equal(res.status, 200);
     assert.match(res.body.path, /^\/api\/uploads\//);
-    assert.match(res.body.name, /-test-short-film\.mp4$/);
+    assert.match(res.body.name, /\d+-[A-Z0-9]{5}\.mp4$/);
   });
 
   it("上传文件：允许 MOV 视频格式", async () => {
     const data = Buffer.from("fake mov content").toString("base64");
     const res = await fetch("POST", "/api/upload", { name: "test-short-film.mov", data });
     assert.equal(res.status, 200);
-    assert.match(res.body.name, /-test-short-film\.mov$/);
+    assert.match(res.body.name, /\d+-[A-Z0-9]{5}\.mov$/);
   });
 
   it("上传文件：允许 AVI 视频格式", async () => {
     const data = Buffer.from("fake avi content").toString("base64");
     const res = await fetch("POST", "/api/upload", { name: "test-short-film.avi", data });
     assert.equal(res.status, 200);
-    assert.match(res.body.name, /-test-short-film\.avi$/);
+    assert.match(res.body.name, /\d+-[A-Z0-9]{5}\.avi$/);
   });
 
   it("上传文件：允许 ZIP 压缩包", async () => {
     const data = Buffer.from("fake zip content").toString("base64");
     const res = await fetch("POST", "/api/upload", { name: "test-short-film.zip", data });
     assert.equal(res.status, 200);
-    assert.match(res.body.name, /-test-short-film\.zip$/);
+    assert.match(res.body.name, /\d+-[A-Z0-9]{5}\.zip$/);
   });
 
   it("上传文件：拒绝不允许的格式（.exe）", async () => {
@@ -156,6 +156,7 @@ describe("一分钟短片创作大赛 · 文件上传与提交", () => {
       wechat: "testwx456",
       workTitle: "重复提交",
       intro: "测试重复提交检测",
+      fileLink: "https://example.com/test-video.mp4",
     });
     assert.equal(resubmit.status, 200);
     assert.equal(resubmit.body.duplicate, true, "重复手机号应标记为 duplicate");
