@@ -656,6 +656,7 @@ function ShortFilmUploadPage() {
   const [success, setSuccess] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [uploadState, setUploadState] = useState({ status: 'idle', progress: 0, fileName: '', error: '' });
+  const [agreed, setAgreed] = useState(false);
   const uploadXhr = useRef(null);
 
   function handleFile(event) {
@@ -737,6 +738,7 @@ function ShortFilmUploadPage() {
     if (intro.length > 0 && intro.length <= 200 && !intro.trim()) next.intro = "请填写作品简介";
     if (!file && !uploadState.fileName && !intro.trim()) next.file = "请上传作品文件";
     if (file && uploadState.status === 'error') next.file = "文件上传失败，请重新选择文件";
+    if (!agreed) next.agreed = "请阅读并同意版权条款";
     setErrors(next);
     return Object.keys(next).length === 0;
   }
@@ -841,9 +843,21 @@ function ShortFilmUploadPage() {
             </label>
             {errors.file && <small>{errors.file}</small>}
           </fieldset>
-          <p className="upload-terms">上传参赛即同意以上我们使用他们作品的权利</p>
+          <label className={`copyright-agreement ${errors.agreed ? "has-error" : ""}`}>
+            <input type="checkbox" checked={agreed} onChange={(e) => { setAgreed(e.target.checked); setErrors((prev) => ({ ...prev, agreed: "" })); }} />
+            <div>
+              <strong>参赛作品版权及使用授权</strong>
+              <ol>
+                <li>作品著作权归创作者所有。自作品提交之日起，参赛者同意授予迈影公司永久、全球范围内、无偿、非独占的作品使用权。</li>
+                <li>迈影公司有权通过互联网平台、社交媒体、视频网站、官方网站、媒体报道、线下活动展览、发布会及其他公开渠道，对全部参赛作品进行发布、传播、展示、放映和宣传。</li>
+                <li>为适应宣传、展示及不同平台的传播要求，迈影公司有权在不歪曲作品原意、不损害创作者合法权益的前提下，对参赛作品进行剪辑、节选、压缩、格式转换、添加字幕、增加片头片尾、制作宣传片段及其他必要编辑。</li>
+              </ol>
+              <span>我已阅读并同意以上条款 <b>*</b></span>
+            </div>
+            {errors.agreed && <small>请阅读并同意版权条款</small>}
+          </label>
           {errors._form && <div className="error-banner">{errors._form}</div>}
-          <button className="button submit-button" type="submit" disabled={submitting}>
+          <button className="button submit-button" type="submit" disabled={submitting || !agreed}>
             {submitting ? "提交中..." : "提交作品"} <ArrowRight weight="bold" />
           </button>
         </form>
