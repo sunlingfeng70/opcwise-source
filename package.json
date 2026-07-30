@@ -15,7 +15,8 @@
     "pm2:restart": "pm2 restart ecosystem.config.cjs",
     "pm2:status": "pm2 status",
     "pm2:logs": "pm2 logs",
-    "test:sites": "node --test tests/sites-worker.test.mjs"
+    "test:sites": "node --test tests/sites-worker.test.mjs",
+    "test:short-film": "node --test tests/short-film-upload.test.mjs"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",

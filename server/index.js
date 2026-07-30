@@ -9,6 +9,14 @@ const ROOT = join(import.meta.dirname, "..");
 const STATIC_DIR = join(ROOT, "dist", "client");
 const PORT = parseInt(process.env.PORT || "5173", 10);
 const PROD = process.env.NODE_ENV === "production";
+
+// ── Global error handlers (prevent server crash) ──────────────────
+process.on("unhandledRejection", (reason) => {
+  try { logError("process", "UnhandledRejection", String(reason)); } catch {}
+});
+process.on("uncaughtException", (err) => {
+  try { logError("process", "UncaughtException", err.message); } catch {}
+});
 // ── Logger ─────────────────────────────────────────────────────────
 const LOG_DIR = join(ROOT, "logs");
 if (!existsSync(LOG_DIR)) mkdirSync(LOG_DIR, { recursive: true });
@@ -264,15 +272,28 @@ async function handleUpload(req, res) {
   return json(res, 400, { error: `File type ${ext} not allowed. Accepted: ${ALLOWED_UPLOAD_EXT.join(", ")}` });
   }
 
-  const buffer = Buffer.from(data, "base64");
-  if (buffer.length > MAX_UPLOAD_BYTES) {
-    logWarn("upload", "File too large", { name: name, size: String(buffer.length) });
-  return json(res, 400, { error: "File too large. Max 10 MB" });
+  let buffer;
+  try {
+    buffer = Buffer.from(data, "base64");
+  } catch (err) {
+    logError("upload", "Base64 decode failed", err.message);
+    return json(res, 400, { error: "文件数据解码失败，请重新选择文件" });
   }
 
-  const safeName = safeFilename(name);
-  mkdirSync(UPLOAD_DIR, { recursive: true });
-  writeFileSync(join(UPLOAD_DIR, safeName), buffer);
+  if (buffer.length > MAX_UPLOAD_BYTES) {
+    logWarn("upload", "File too large", { name: name, size: String(buffer.length) });
+  return json(res, 400, { error: "文件过大，请上传不超过 500MB 的文件" });
+  }
+
+  let safeName;
+  try {
+    safeName = safeFilename(name);
+    mkdirSync(UPLOAD_DIR, { recursive: true });
+    writeFileSync(join(UPLOAD_DIR, safeName), buffer);
+  } catch (err) {
+    logError("upload", "File write failed", err.message);
+    return json(res, 500, { error: "文件保存失败，请重试" });
+  }
   logInfo("upload", "File uploaded", { name: safeName, size: String(buffer.length), type: ext });
   json(res, 200, { path: `/api/uploads/${safeName}`, name: safeName });
 }
@@ -398,36 +419,41 @@ function serveStatic(req, res) {
 
 // ── Server ────────────────────────────────────────────────────────
 const server = createServer(async (req, res) => {
-  const { method, url } = req;
+  try {
+    const { method, url } = req;
 
-  if (url === "/api/submit") {
-    return handleSubmit(req, res);
+    if (url === "/api/submit") {
+      return await handleSubmit(req, res);
+    }
+
+    if (url === "/api/upload" && method === "POST") {
+      return await handleUpload(req, res);
+    }
+
+    if (url.startsWith("/api/uploads/") && method === "GET") {
+      return handleServeUpload(req, res);
+    }
+
+    if (url === "/api/admin/login" && method === "POST") {
+      return await handleAdminLogin(req, res);
+    }
+
+    if (url.startsWith("/api/admin/submissions") && method === "GET") {
+      if (!requireAdmin(res, req)) return json(res, 401, { error: "未登录" });
+      return handleAdminSubmissions(req, res);
+    }
+
+    if (PROD) {
+      return serveStatic(req, res);
+    }
+
+    // In dev mode, API-only — frontend is served by Vite
+    res.writeHead(404);
+    res.end("Not found");
+  } catch (err) {
+    logError("request", "Unhandled error", err.message);
+    json(res, 500, { error: "服务器内部错误，请重试" });
   }
-
-  if (url === "/api/upload" && method === "POST") {
-    return handleUpload(req, res);
-  }
-
-  if (url.startsWith("/api/uploads/") && method === "GET") {
-    return handleServeUpload(req, res);
-  }
-
-  if (url === "/api/admin/login" && method === "POST") {
-    return handleAdminLogin(req, res);
-  }
-
-  if (url.startsWith("/api/admin/submissions") && method === "GET") {
-    if (!requireAdmin(res, req)) return json(res, 401, { error: "未登录" });
-    return handleAdminSubmissions(req, res);
-  }
-
-  if (PROD) {
-    return serveStatic(req, res);
-  }
-
-  // In dev mode, API-only — frontend is served by Vite
-  res.writeHead(404);
-  res.end("Not found");
 });
 
 server.listen(PORT, () => {

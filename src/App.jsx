@@ -701,8 +701,8 @@ function ShortFilmUploadPage() {
           body: JSON.stringify({ name: file.name, data }),
         });
         if (!uploadRes.ok) {
-          let msg = "文件上传失败";
-          try { const err = await uploadRes.json(); if (err.error) msg = err.error; } catch {}
+          let msg;
+          try { const err = await uploadRes.json(); if (err.error) msg = err.error; } catch { msg = `服务器返回异常（${uploadRes.status}），请重试`; }
           throw new Error(msg);
         }
         const uploadData = await uploadRes.json();
@@ -717,14 +717,17 @@ function ShortFilmUploadPage() {
         }),
       });
       if (!res.ok) {
-        let msg = "提交失败，请稍后重试";
-        try { const err = await res.json(); if (err.error) msg = err.error; } catch {}
+        let msg;
+        try { const err = await res.json(); if (err.error) msg = err.error; } catch { msg = `提交失败（${res.status}），请稍后重试`; }
         throw new Error(msg);
       }
       const data = await res.json();
       setSuccess(data.id);
     } catch (err) {
-      setErrors((prev) => ({ ...prev, _form: err.message }));
+      const msg = err.message.includes("Failed to fetch") || err.message.includes("NetworkError")
+        ? "无法连接服务器，请确认后端服务已启动"
+        : err.message;
+      setErrors((prev) => ({ ...prev, _form: msg }));
     } finally {
       setSubmitting(false);
     }
@@ -875,8 +878,8 @@ function FormModal({ type, onClose }) {
           body: JSON.stringify({ name: file.name, data }),
         });
         if (!uploadRes.ok) {
-          let msg = "文件上传失败";
-          try { const err = await uploadRes.json(); if (err.error) msg = err.error; } catch {}
+          let msg;
+          try { const err = await uploadRes.json(); if (err.error) msg = err.error; } catch { msg = `服务器返回异常（${uploadRes.status}），请重试`; }
           throw new Error(msg);
         }
         const uploadData = await uploadRes.json();
@@ -889,15 +892,18 @@ function FormModal({ type, onClose }) {
         body: JSON.stringify(body),
       });
       if (!res.ok) {
-        let msg = "提交失败，请稍后重试";
-        try { const err = await res.json(); if (err.error) msg = err.error; } catch {}
+        let msg;
+        try { const err = await res.json(); if (err.error) msg = err.error; } catch { msg = `提交失败（${res.status}），请稍后重试`; }
         throw new Error(msg);
       }
       const data = await res.json();
       setDuplicate(data.duplicate);
       setSuccess(data.id);
     } catch (err) {
-      setErrors((current) => ({ ...current, _form: err.message }));
+      const msg = err.message.includes("Failed to fetch") || err.message.includes("NetworkError")
+        ? "无法连接服务器，请确认后端服务已启动"
+        : err.message;
+      setErrors((current) => ({ ...current, _form: msg }));
     }
   }
 
