@@ -149,8 +149,8 @@ const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 50 MB
 
 function safeFilename(original) {
   const ext = extname(original).toLowerCase();
-  const base = original.slice(0, -ext.length).replace(/[^a-zA-Z0-9\u4e00-\u9fff_-]/g, "_");
-  return `${Date.now()}-${base}${ext}`;
+  const random = Math.random().toString(36).slice(2, 7).toUpperCase();
+  return `${Date.now()}-${random}${ext}`;
 }
 
 function generateId(type) {
