@@ -890,7 +890,7 @@ function ShortFilmUploadPage() {
                 <input type="file" accept=".jpg,.jpeg,.png,.webp,.pdf,.mp4,.mov,.avi,.zip" onChange={handleFile} disabled={linkStatus === 'valid'} />
               </label>
               <div className="link-box">
-                <span>或提供作品在线链接</span>
+                <span>或提供作品在线网盘链接</span>
                 <div className="link-input-row">
                   <input type="url" className="link-input" value={link} onChange={(e) => handleLinkChange(e.target.value)} placeholder="https://..." disabled={uploadState.status === 'done' || uploadState.status === 'uploading' || uploadState.status === 'reading'} />
                   <button type="button" className="link-validate-btn" onClick={handleValidateLink} disabled={!link.trim() || linkStatus === 'validating' || uploadState.status === 'done' || uploadState.status === 'uploading' || uploadState.status === 'reading'}>
