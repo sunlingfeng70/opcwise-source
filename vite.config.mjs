@@ -10,8 +10,8 @@ export default defineConfig({
   },
   server: {
     host: "0.0.0.0",
-    port: 80,
-    allowedHosts: ["www.opcwise.com"],
+    port: 3000,
+    allowedHosts: ["opcwise.com", "www.opcwise.com"],
     warmup: {
       clientFiles: ["./src/main.jsx"],
     },
