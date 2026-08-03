@@ -88,10 +88,11 @@ function Brand({ compact = false }) {
   return (
     <button className="brand" onClick={() => go("home")} aria-label="返回 OPCWISE 首页">
       <img src="/assets/opcwise-mark.png" alt="" />
-      <span className="brand-copy">
+      <img src="/assets/logo.png" alt="" />
+      {/* <span className="brand-copy">
         <strong>OPCWISE</strong>
         {!compact && <small>AI · OPC 创业者大会</small>}
-      </span>
+      </span> */}
     </button>
   );
 }

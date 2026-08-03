@@ -97,9 +97,8 @@ p {
 }
 
 .brand img {
-  width: 58px;
-  height: 48px;
-  object-fit: contain;
+  width: auto;
+  height: 46px;
 }
 
 .brand-copy {
@@ -1931,7 +1930,8 @@ p {
   }
 
   .brand img {
-    width: 48px;
+    width: auto;
+    height: 40px;
   }
 
   .brand-copy strong {
@@ -2138,8 +2138,8 @@ p {
   }
 
   .brand img {
-    width: 42px;
-    height: 40px;
+    width: auto;
+    height: 34px;
   }
 
   .brand-copy strong {
