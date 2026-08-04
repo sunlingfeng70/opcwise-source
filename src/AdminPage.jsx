@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 const TOKEN_KEY = "opcwise-admin-token";
 
@@ -193,9 +193,18 @@ function ConfirmModal({ title, message, loading, onConfirm, onClose }) {
   );
 }
 
-function DataTable({ columns, rows, search, onSearchChange, onRefresh, onRowClick, onDelete, page, total, pageSize, onPageChange, onBatchDelete }) {
+function DataTable({ columns, rows, search, onSearchChange, onRefresh, onRowClick, onDelete, page, total, pageSize, onPageChange, onBatchDelete, selected = [], onToggleRow, onTogglePage }) {
+  const showSelection = !!onToggleRow && !!onTogglePage;
   const cols = onDelete ? [...columns, { key: "_action", label: "操作" }] : columns;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const pageIds = rows.map((r) => r.id);
+  const pageSelectedCount = pageIds.filter((id) => selected.includes(id)).length;
+  const pageAllSelected = pageIds.length > 0 && pageSelectedCount === pageIds.length;
+  const pagePartial = pageSelectedCount > 0 && !pageAllSelected;
+  const selectAllRef = useRef(null);
+  useEffect(() => {
+    if (selectAllRef.current) selectAllRef.current.indeterminate = pagePartial;
+  }, [pagePartial]);
   return (
     <div className="admin-table-wrap">
       <div className="admin-table-toolbar">
@@ -206,10 +215,17 @@ function DataTable({ columns, rows, search, onSearchChange, onRefresh, onRowClic
           value={search}
           onChange={(e) => onSearchChange(e.target.value)}
         />
-        <button className="admin-delete-all" onClick={onBatchDelete} disabled={rows.length === 0}>
-          全部删除
-        </button>
+        {showSelection ? (
+          <button className="admin-delete-all" onClick={onBatchDelete} disabled={selected.length === 0}>
+            删除选中{selected.length > 0 ? ` (${selected.length})` : ""}
+          </button>
+        ) : (
+          <button className="admin-delete-all" onClick={onBatchDelete} disabled={rows.length === 0}>
+            全部删除
+          </button>
+        )}
         <span className="admin-count">共 {total} 条 · 第 {page} / {totalPages} 页</span>
+        {selected.length > 0 && <span className="admin-selected-count">已选 {selected.length} 条</span>}
         <button className="admin-refresh" onClick={onRefresh} title="刷新数据">
           ↻
         </button>
@@ -226,6 +242,18 @@ function DataTable({ columns, rows, search, onSearchChange, onRefresh, onRowClic
         <table className="admin-table">
           <thead>
             <tr>
+              {showSelection && (
+                <th className="admin-checkbox-col">
+                  <input
+                    ref={selectAllRef}
+                    type="checkbox"
+                    className="admin-checkbox"
+                    checked={pageAllSelected}
+                    onChange={onTogglePage}
+                    title="全选当前页"
+                  />
+                </th>
+              )}
               {cols.map((col) => (
                 <th key={col.key}>{col.label}</th>
               ))}
@@ -234,23 +262,36 @@ function DataTable({ columns, rows, search, onSearchChange, onRefresh, onRowClic
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={cols.length} className="admin-empty">
+                <td colSpan={cols.length + (showSelection ? 1 : 0)} className="admin-empty">
                   暂无数据
                 </td>
               </tr>
             ) : (
-              rows.map((row) => (
-                <tr key={row.id} className="admin-row" onClick={() => onRowClick?.(row)}>
-                  {cols.map((col) => (
-                    <td key={col.key}>
-                      {col.key === "_action"
-                        ? <DeleteBtn onClick={() => onDelete(row)} />
-                        : col.render ? col.render(row[col.key]) : row[col.key] ?? "-"
-                      }
-                    </td>
-                  ))}
-                </tr>
-              ))
+              rows.map((row) => {
+                const isSelected = selected.includes(row.id);
+                return (
+                  <tr key={row.id} className={isSelected ? "admin-row selected" : "admin-row"} onClick={() => onRowClick?.(row)}>
+                    {showSelection && (
+                      <td className="admin-checkbox-col" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          className="admin-checkbox"
+                          checked={isSelected}
+                          onChange={() => onToggleRow(row.id)}
+                        />
+                      </td>
+                    )}
+                    {cols.map((col) => (
+                      <td key={col.key}>
+                        {col.key === "_action"
+                          ? <DeleteBtn onClick={() => onDelete(row)} />
+                          : col.render ? col.render(row[col.key]) : row[col.key] ?? "-"
+                        }
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
@@ -270,6 +311,7 @@ export function AdminPage() {
   const [total, setTotal] = useState(0);
   const [batchOpen, setBatchOpen] = useState(false);
   const [reloadTick, setReloadTick] = useState(0);
+  const [selected, setSelected] = useState([]);
   const PAGE_SIZE = 20;
 
   const columns = tab === "aigc" ? AIGC_COLUMNS : tab === "short_film" ? SHORT_FILM_COLUMNS : ENTERPRISE_COLUMNS;
@@ -299,7 +341,7 @@ export function AdminPage() {
   }, [token]);
 
   const handleBatchDelete = useCallback(async () => {
-    const ids = rows.map((r) => r.id);
+    const ids = selected;
     if (ids.length === 0) return;
     setBatchOpen(false);
     setLoading(true);
@@ -314,16 +356,34 @@ export function AdminPage() {
         const data = await res.json();
         throw new Error(data.error || "删除失败");
       }
+      const currentPageIds = rows.map((r) => r.id);
+      const allCurrentSelected = currentPageIds.length > 0 && currentPageIds.every((id) => ids.includes(id));
+      setSelected([]);
       setTotal((prev) => Math.max(0, prev - ids.length));
       setDetail(null);
-      if (page > 1) setPage(page - 1);
+      if (allCurrentSelected && page > 1) setPage(page - 1);
       else setReloadTick((t) => t + 1);
     } catch (err) {
       alert(err.message);
     } finally {
       setLoading(false);
     }
-  }, [token, rows, page, apiType]);
+  }, [token, selected, rows, page, apiType]);
+
+  const toggleRowSelected = useCallback((id) => {
+    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }, []);
+
+  const togglePageSelected = useCallback(() => {
+    setSelected((prev) => {
+      const pageIds = rows.map((r) => r.id);
+      const allSelected = pageIds.length > 0 && pageIds.every((id) => prev.includes(id));
+      if (allSelected) return prev.filter((id) => !pageIds.includes(id));
+      const merged = new Set(prev);
+      pageIds.forEach((id) => merged.add(id));
+      return [...merged];
+    });
+  }, [rows]);
 
   const fetchData = useCallback(async () => {
     if (!token) return;
@@ -360,6 +420,7 @@ export function AdminPage() {
     localStorage.removeItem(TOKEN_KEY);
     setToken(null);
     setRows([]);
+    setSelected([]);
   }
 
   if (!token) {
@@ -383,19 +444,19 @@ export function AdminPage() {
       <nav className="admin-tabs">
         <button
           className={tab === "aigc" ? "admin-tab active" : "admin-tab"}
-          onClick={() => { setTab("aigc"); setPage(1); }}
+          onClick={() => { setTab("aigc"); setPage(1); setSelected([]); }}
         >
           AIGC 报名表
         </button>
         <button
           className={tab === "enterprise" ? "admin-tab active" : "admin-tab"}
-          onClick={() => { setTab("enterprise"); setPage(1); }}
+          onClick={() => { setTab("enterprise"); setPage(1); setSelected([]); }}
         >
           企业需求表
         </button>
         <button
           className={tab === "short_film" ? "admin-tab active" : "admin-tab"}
-          onClick={() => { setTab("short_film"); setPage(1); }}
+          onClick={() => { setTab("short_film"); setPage(1); setSelected([]); }}
         >
           一分钟短片
         </button>
@@ -408,7 +469,7 @@ export function AdminPage() {
           columns={columns}
           rows={rows}
           search={search}
-          onSearchChange={(v) => { setSearch(v); setPage(1); }}
+          onSearchChange={(v) => { setSearch(v); setPage(1); setSelected([]); }}
           onRefresh={fetchData}
           onRowClick={setDetail}
           onDelete={handleDelete}
@@ -417,6 +478,9 @@ export function AdminPage() {
           pageSize={PAGE_SIZE}
           onPageChange={setPage}
           onBatchDelete={() => setBatchOpen(true)}
+          selected={selected}
+          onToggleRow={toggleRowSelected}
+          onTogglePage={togglePageSelected}
         />
       )}
       {detail && (
@@ -429,8 +493,8 @@ export function AdminPage() {
       )}
       {batchOpen && (
         <ConfirmModal
-          title="全部删除"
-          message={`将删除当前页显示的全部 ${rows.length} 条记录（含手机号搜索筛选）。删除后这些记录将被隐藏，不可在后台恢复。确认继续？`}
+          title="删除选中"
+          message={`将删除已勾选的 ${selected.length} 条记录。删除后这些记录将被隐藏，不可在后台恢复。确认继续？`}
           loading={loading}
           onConfirm={handleBatchDelete}
           onClose={() => setBatchOpen(false)}
