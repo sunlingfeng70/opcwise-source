@@ -368,12 +368,20 @@ async function handleAdminLogin(req, res) {
   json(res, 200, { token });
 }
 
+function getTableForType(type) {
+  if (type === "short_film") return "short_film_submissions";
+  if (type === "enterprise") return "enterprise_submissions";
+  return "aigc_submissions";
+}
+
 function handleAdminSubmissions(req, res) {
   const url = new URL(req.url, "http://localhost");
   const type = url.searchParams.get("type") || "aigc";
   const phone = url.searchParams.get("phone") || "";
+  const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10) || 1);
+  const pageSize = Math.min(200, Math.max(1, parseInt(url.searchParams.get("pageSize") || "20", 10) || 20));
 
-  const table = type === "short_film" ? "short_film_submissions" : type === "enterprise" ? "enterprise_submissions" : "aigc_submissions";
+  const table = getTableForType(type);
 
   const conditions = ["deleted_at IS NULL"];
   const params = [];
@@ -383,9 +391,10 @@ function handleAdminSubmissions(req, res) {
     params.push(`%${phone}%`);
   }
 
-  const query = `SELECT * FROM ${table} WHERE ${conditions.join(" AND ")} ORDER BY created_at DESC LIMIT 200`;
-
-  const rows = db.prepare(query).all(...params);
+  const whereSql = conditions.join(" AND ");
+  const total = db.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE ${whereSql}`).get(...params).count;
+  const offset = (page - 1) * pageSize;
+  const rows = db.prepare(`SELECT * FROM ${table} WHERE ${whereSql} ORDER BY created_at DESC LIMIT ? OFFSET ?`).all(...params, pageSize, offset);
 
   const parsed = rows.map((row) => ({
     ...row,
@@ -394,8 +403,8 @@ function handleAdminSubmissions(req, res) {
     needs: row.needs ? tryParseJSON(row.needs) : row.needs,
   }));
 
-  logInfo("query", "Admin queried submissions", { type: type, phone: phone ? maskPhone(phone) : "all", count: String(parsed.length) });
-  json(res, 200, { data: parsed, total: parsed.length });
+  logInfo("query", "Admin queried submissions", { type: type, phone: phone ? maskPhone(phone) : "all", count: String(parsed.length), page: String(page), total: String(total) });
+  json(res, 200, { data: parsed, total, page, pageSize });
 }
 
 function handleAdminDeleteSubmission(req, res) {
@@ -414,6 +423,23 @@ function handleAdminDeleteSubmission(req, res) {
 
   logInfo("delete", "Submission soft-deleted", { id });
   json(res, 200, { success: true });
+}
+
+async function handleAdminBatchDelete(req, res) {
+  let body;
+  try { body = await parseBody(req); }
+  catch { return json(res, 400, { error: "无效请求体" }); }
+
+  const type = body?.type || "aigc";
+  const ids = Array.isArray(body?.ids) ? body.ids.filter((v) => v != null && v !== "").map(String) : [];
+  if (ids.length === 0) return json(res, 400, { error: "缺少要删除的记录" });
+
+  const table = getTableForType(type);
+  const placeholders = ids.map(() => "?").join(",");
+  const result = db.prepare(`UPDATE ${table} SET deleted_at = datetime('now') WHERE deleted_at IS NULL AND id IN (${placeholders})`).run(...ids);
+
+  logInfo("delete", "Batch soft-deleted", { type, count: String(result.changes) });
+  json(res, 200, { success: true, deleted: result.changes });
 }
 
 function tryParseJSON(str) {
@@ -513,6 +539,11 @@ const server = createServer(async (req, res) => {
     if (url.startsWith("/api/admin/submissions/") && method === "DELETE") {
       if (!requireAdmin(res, req)) return json(res, 401, { error: "未登录" });
       return handleAdminDeleteSubmission(req, res);
+    }
+
+    if (url === "/api/admin/submissions/batch-delete" && method === "POST") {
+      if (!requireAdmin(res, req)) return json(res, 401, { error: "未登录" });
+      return await handleAdminBatchDelete(req, res);
     }
 
     if (url.startsWith("/api/admin/submissions") && method === "GET") {
