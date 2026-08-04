@@ -7,10 +7,14 @@ function go(route) {
   window.scrollTo({ top: 0 });
 }
 
-function fetchWithAuth(url, token, method) {
+function fetchWithAuth(url, token, method, body) {
   return fetch(url, {
     method: method || "GET",
-    headers: { Authorization: `Bearer ${token}` },
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(body ? { "Content-Type": "application/json" } : {}),
+    },
+    ...(body ? { body: JSON.stringify(body) } : {}),
   });
 }
 
@@ -167,8 +171,31 @@ function DeleteBtn({ onClick }) {
   );
 }
 
-function DataTable({ columns, rows, search, onSearchChange, onRefresh, onRowClick, onDelete }) {
+function ConfirmModal({ title, message, loading, onConfirm, onClose }) {
+  return (
+    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+      <div className="admin-detail-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <div className="admin-detail-header">
+          <h2>{title}</h2>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="admin-detail-body">
+          <p>{message}</p>
+        </div>
+        <div className="admin-detail-footer">
+          <button className="button admin-delete-btn" onClick={onConfirm} disabled={loading}>
+            {loading ? "删除中..." : "确认删除"}
+          </button>
+          <button className="button" onClick={onClose}>取消</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DataTable({ columns, rows, search, onSearchChange, onRefresh, onRowClick, onDelete, page, total, pageSize, onPageChange, onBatchDelete }) {
   const cols = onDelete ? [...columns, { key: "_action", label: "操作" }] : columns;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
   return (
     <div className="admin-table-wrap">
       <div className="admin-table-toolbar">
@@ -179,10 +206,21 @@ function DataTable({ columns, rows, search, onSearchChange, onRefresh, onRowClic
           value={search}
           onChange={(e) => onSearchChange(e.target.value)}
         />
-        <span className="admin-count">{rows.length} 条记录</span>
+        <button className="admin-delete-all" onClick={onBatchDelete} disabled={rows.length === 0}>
+          全部删除
+        </button>
+        <span className="admin-count">共 {total} 条 · 第 {page} / {totalPages} 页</span>
         <button className="admin-refresh" onClick={onRefresh} title="刷新数据">
           ↻
         </button>
+        <div className="admin-pagination">
+          <button className="admin-page-btn" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
+            上一页
+          </button>
+          <button className="admin-page-btn" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}>
+            下一页
+          </button>
+        </div>
       </div>
       <div className="admin-table-scroll">
         <table className="admin-table">
@@ -228,8 +266,14 @@ export function AdminPage() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [detail, setDetail] = useState(null);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [batchOpen, setBatchOpen] = useState(false);
+  const [reloadTick, setReloadTick] = useState(0);
+  const PAGE_SIZE = 20;
 
   const columns = tab === "aigc" ? AIGC_COLUMNS : tab === "short_film" ? SHORT_FILM_COLUMNS : ENTERPRISE_COLUMNS;
+  const apiType = tab === "short_film" ? "short_film" : tab;
 
   const handleDelete = useCallback(async (row) => {
     setLoading(true);
@@ -245,6 +289,7 @@ export function AdminPage() {
         throw new Error(data.error || "删除失败");
       }
       setRows((prev) => prev.filter((r) => r.id !== row.id));
+      setTotal((prev) => Math.max(0, prev - 1));
       setDetail((prev) => (prev?.id === row.id ? null : prev));
     } catch (err) {
       alert(err.message);
@@ -253,12 +298,38 @@ export function AdminPage() {
     }
   }, [token]);
 
+  const handleBatchDelete = useCallback(async () => {
+    const ids = rows.map((r) => r.id);
+    if (ids.length === 0) return;
+    setBatchOpen(false);
+    setLoading(true);
+    try {
+      const res = await fetchWithAuth("/api/admin/submissions/batch-delete", token, "POST", { type: apiType, ids });
+      if (res.status === 401) {
+        localStorage.removeItem(TOKEN_KEY);
+        setToken(null);
+        return;
+      }
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "删除失败");
+      }
+      setTotal((prev) => Math.max(0, prev - ids.length));
+      setDetail(null);
+      if (page > 1) setPage(page - 1);
+      else setReloadTick((t) => t + 1);
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [token, rows, page, apiType]);
+
   const fetchData = useCallback(async () => {
     if (!token) return;
     setLoading(true);
     try {
-      const apiType = tab === "short_film" ? "short_film" : tab;
-      const params = new URLSearchParams({ type: apiType });
+      const params = new URLSearchParams({ type: apiType, page: String(page), pageSize: String(PAGE_SIZE) });
       if (search) params.set("phone", search);
       const res = await fetchWithAuth(`/api/admin/submissions?${params}`, token);
       if (res.status === 401) {
@@ -268,12 +339,13 @@ export function AdminPage() {
       }
       const data = await res.json();
       setRows(data.data || []);
+      setTotal(typeof data.total === "number" ? data.total : (data.data || []).length);
     } catch {
       setRows([]);
     } finally {
       setLoading(false);
     }
-  }, [token, tab, search]);
+  }, [token, apiType, search, page, reloadTick]);
 
   useEffect(() => {
     fetchData();
@@ -311,19 +383,19 @@ export function AdminPage() {
       <nav className="admin-tabs">
         <button
           className={tab === "aigc" ? "admin-tab active" : "admin-tab"}
-          onClick={() => setTab("aigc")}
+          onClick={() => { setTab("aigc"); setPage(1); }}
         >
           AIGC 报名表
         </button>
         <button
           className={tab === "enterprise" ? "admin-tab active" : "admin-tab"}
-          onClick={() => setTab("enterprise")}
+          onClick={() => { setTab("enterprise"); setPage(1); }}
         >
           企业需求表
         </button>
         <button
           className={tab === "short_film" ? "admin-tab active" : "admin-tab"}
-          onClick={() => setTab("short_film")}
+          onClick={() => { setTab("short_film"); setPage(1); }}
         >
           一分钟短片
         </button>
@@ -336,10 +408,15 @@ export function AdminPage() {
           columns={columns}
           rows={rows}
           search={search}
-          onSearchChange={setSearch}
+          onSearchChange={(v) => { setSearch(v); setPage(1); }}
           onRefresh={fetchData}
           onRowClick={setDetail}
           onDelete={handleDelete}
+          page={page}
+          total={total}
+          pageSize={PAGE_SIZE}
+          onPageChange={setPage}
+          onBatchDelete={() => setBatchOpen(true)}
         />
       )}
       {detail && (
@@ -348,6 +425,15 @@ export function AdminPage() {
           columns={columns}
           onClose={() => setDetail(null)}
           onDelete={handleDelete}
+        />
+      )}
+      {batchOpen && (
+        <ConfirmModal
+          title="全部删除"
+          message={`将删除当前页显示的全部 ${rows.length} 条记录（含手机号搜索筛选）。删除后这些记录将被隐藏，不可在后台恢复。确认继续？`}
+          loading={loading}
+          onConfirm={handleBatchDelete}
+          onClose={() => setBatchOpen(false)}
         />
       )}
     </div>

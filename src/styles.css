@@ -2587,6 +2587,55 @@ p {
   font-size: 13px;
 }
 
+.admin-delete-all {
+  padding: 8px 14px;
+  border: 1px solid #ff4757;
+  border-radius: 6px;
+  background: none;
+  color: #ff4757;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.admin-delete-all:hover:not(:disabled) {
+  background: #ff4757;
+  color: #fff;
+}
+
+.admin-delete-all:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.admin-pagination {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-page-btn {
+  padding: 6px 14px;
+  border: 1px solid #333;
+  border-radius: 6px;
+  background: #111;
+  color: #aaa;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.admin-page-btn:hover:not(:disabled) {
+  color: #fff;
+  border-color: #555;
+  background: #1a1a1a;
+}
+
+.admin-page-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .admin-refresh {
   margin-left: auto;
   padding: 6px 14px;
